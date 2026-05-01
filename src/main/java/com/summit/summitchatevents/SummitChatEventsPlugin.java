@@ -1,6 +1,7 @@
 package com.summit.summitchatevents;
 
 import com.summit.summitchatevents.commands.SummitEventCommand;
+import com.summit.summitchatevents.listeners.ChatListener;
 import com.summit.summitchatevents.managers.EventManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -100,9 +101,8 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
      * Add new listeners here as the plugin grows.
      */
     private void registerListeners() {
-        // Example (uncomment when the listener exists):
-        // getServer().getPluginManager().registerEvents(new ChatListener(this), this);
-        getLogger().info("Listeners registered. (none active yet)");
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+        getLogger().info("Listeners registered.");
     }
 
     // -----------------------------------------------------------------------
