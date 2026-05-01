@@ -127,4 +127,16 @@ public abstract class ChatEvent {
     protected final @NotNull SummitChatEventsPlugin getPlugin() {
         return plugin;
     }
+
+    /**
+     * Called by the stop command before {@link #stop()} to signal that this
+     * event was terminated by an administrator rather than finishing naturally.
+     *
+     * <p>Default implementation is a no-op. Subclasses that need to suppress
+     * the result announcement (e.g. {@link com.summit.summitchatevents.events.impl.WavelengthEvent})
+     * should override this method and set their own flag.
+     */
+    public void markStoppedByAdmin() {
+        // No-op by default — override in subclasses that need it
+    }
 }

@@ -79,7 +79,9 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private final Map<UUID, Integer> guesses       = new HashMap<>();
     private final Set<String>        usedPrompts   = new HashSet<>();
 
-    @Nullable private List<UUID> finalWinners = null;
+    @Nullable private List<UUID> finalWinners  = null;
+    /** Set to true by the stop command — suppresses result announcement. */
+    private volatile boolean      stoppedByAdmin = false;
 
     private int    currentRound    = 0;
     private String currentScaleMin = "";
@@ -106,9 +108,10 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     @Override
     protected void onStart() {
         // Reset everything before registering anything
-        live         = false;
-        currentRound = 0;
-        finalWinners = null;
+        live           = false;
+        currentRound   = 0;
+        finalWinners   = null;
+        stoppedByAdmin = false;
         currentScaleMin = currentScaleMax = currentPrompt = "";
         tasks.clear();
         usedPrompts.clear();
@@ -141,7 +144,9 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         final WavelengthConfig wcfg    = getPlugin().getPluginConfig().getWavelengthConfig();
         final List<UUID>       winners = finalWinners;
 
-        if (winners == null || winners.isEmpty()) {
+        if (stoppedByAdmin) {
+            // Event was force-stopped — no result announced (stop command already broadcast the message)
+        } else if (winners == null || winners.isEmpty()) {
             broadcast(wcfg.getMsgNoWinner());
         } else if (winners.size() == 1) {
             broadcast(WavelengthConfig.format(wcfg.getMsgWinner(),
@@ -164,6 +169,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         }
         usedPrompts.clear();
         finalWinners    = null;
+        stoppedByAdmin  = false;
         currentRound    = 0;
         currentScaleMin = currentScaleMax = currentPrompt = "";
     }
@@ -291,18 +297,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             }
         }
 
-        // ── Formatted guess list (shown to all players) ───────────────────────
-        final String guessList = snap.entrySet().stream()
-                .sorted(Map.Entry.comparingByValue())
-                .map(e -> resolvePlayerName(e.getKey()) + ": &6" + e.getValue())
-                .collect(Collectors.joining("&7, &f"));
-        broadcast(getPlugin().getPluginConfig().getPrefix()
-                + "&7Guesses: &f" + guessList);
-
-        // ── Dramatic build-up ─────────────────────────────────────────────────
-        broadcast(wcfg.getMsgGuessingOver());
-
-        // Build result message — single or tie variant
+        // ── Build result message ─────────────────────────────────────────────
+        // Tie player list uses § codes directly so they survive inside a pre-translated string
         final String resultMsg;
         if (tied.size() == 1) {
             final UUID u = tied.get(0);
@@ -310,15 +306,16 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                     -1, resolvePlayerName(u), tiedGuesses.get(u), -1,
                     null, null, null, avgDisplay, null);
         } else {
-            // Show all tied players and their guesses
+            // Build tied-players string using § codes (string is already colour-translated)
             final String tiedStr = tied.stream()
-                    .map(u -> resolvePlayerName(u) + " &7(&6" + tiedGuesses.get(u) + "&7)")
-                    .collect(Collectors.joining("&e, "));
+                    .map(u -> resolvePlayerName(u) + " \u00a77(\u00a76" + tiedGuesses.get(u) + "\u00a77)")
+                    .collect(Collectors.joining("\u00a7e, "));
             resultMsg = WavelengthConfig.format(wcfg.getMsgRoundResultTie(),
                     -1, null, -1, -1, null, null, null, avgDisplay, tiedStr);
         }
 
-        // Schedule result after short dramatic pause
+        // Dramatic build-up then result
+        broadcast(wcfg.getMsgGuessingOver());
         schedule(T_REVEAL_BUILDUP, () -> broadcast(resultMsg));
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
@@ -546,6 +543,11 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
     // Public accessors
     // -----------------------------------------------------------------------
+
+    @Override
+    public void markStoppedByAdmin() {
+        stoppedByAdmin = true;
+    }
 
     public int    getCurrentRound()  { return currentRound; }
     public String getCurrentPrompt() { return currentPrompt; }

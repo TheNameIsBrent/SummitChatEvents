@@ -87,9 +87,10 @@ events:
       round-2-start:   "%prefix%&6&lTie! &eRound 2 — only these players continue: &6%players%"
       final-round:     "%prefix%&c&lFinal Round! &eLast chance — remaining: &6%players%"
 
-      # Shows all tied players when there are multiple closest guesses
-      round-result-single: "%prefix%&eAverage: &6%average%&e. Winner: &6&l%player% &7(&6%guess%&7)!"
-      round-result-tie:    "%prefix%&eAverage: &6%average%&e. Tied: &6&l%players%"
+      # Single winner: uses %average%, %player%, %guess%
+      round-result-single: "%prefix%&e%player% wins! &7(guessed &6%guess%&7, average &6%average%&7)"
+      # Tie (2+ tied): uses %average%, %players%  where %players% = "Alice (75), Bob (75)"
+      round-result-tie:    "%prefix%&6Its a tie! &e%players% &7(average &6%average%&7)"
 
       guessing-over:   "&6&l\u2728 Ohhh, lots of guesses! Here comes the result..."
 

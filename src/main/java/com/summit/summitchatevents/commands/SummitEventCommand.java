@@ -164,6 +164,10 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
         // Broadcast the public stop message before stopping so it reaches players
         Bukkit.broadcastMessage(plugin.getPluginConfig().getStoppedMessage());
 
+        // Mark admin stop BEFORE stopping so onStop() knows to skip result announcement
+        final var activeEvent = plugin.getEventManager().getActiveEvent();
+        if (activeEvent != null) activeEvent.markStoppedByAdmin();
+
         plugin.getEventManager().stopCurrentEvent();
         msg(sender, C_OK + "Event stopped.");
         plugin.getLogger().info(sender.getName() + " stopped the active event.");
