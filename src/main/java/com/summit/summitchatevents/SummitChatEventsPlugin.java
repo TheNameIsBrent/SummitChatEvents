@@ -1,5 +1,6 @@
 package com.summit.summitchatevents;
 
+import com.summit.summitchatevents.commands.SummitEventCommand;
 import com.summit.summitchatevents.managers.EventManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -51,6 +52,7 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
 
         // ── Subsystems ──────────────────────────────────────────────────────
         initManagers();
+        registerCommands();
         registerListeners();
 
         getLogger().info("SummitChatEvents enabled successfully.");
@@ -79,6 +81,18 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
         eventManager = new EventManager(this);
         eventManager.init();
         getLogger().info("Managers initialised.");
+    }
+
+    /**
+     * Register all commands defined in plugin.yml.
+     * Add new commands here as the plugin grows.
+     */
+    private void registerCommands() {
+        final SummitEventCommand summitEventCommand = new SummitEventCommand(this);
+        //noinspection DataFlowIssue  — getCommand() is non-null when declared in plugin.yml
+        getCommand("summitevent").setExecutor(summitEventCommand);
+        getCommand("summitevent").setTabCompleter(summitEventCommand);
+        getLogger().info("Commands registered.");
     }
 
     /**
