@@ -106,6 +106,7 @@ public final class PluginConfig {
     // Accessors — Count Up
     // -----------------------------------------------------------------------
 
+    public int    getCountMinPlayers()   { return countMinPlayers; }
     public int    getCountMinDuration()   { return countMinDuration; }
     public int    getCountMaxDuration()   { return countMaxDuration; }
     public String getCountRewardCommand() { return countRewardCommand; }
