@@ -2,6 +2,7 @@ package com.summit.summitchatevents.events.impl;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
 import com.summit.summitchatevents.config.PluginConfig;
+import com.summit.summitchatevents.config.WavelengthConfig;
 import com.summit.summitchatevents.events.ChatEvent;
 import com.summit.summitchatevents.listeners.ChatListener;
 import org.bukkit.Bukkit;
@@ -21,31 +22,29 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * Wavelength — a multi-round guessing event.
+ * Wavelength — a multi-round number-placement event.
  *
  * <h3>Flow (per round)</h3>
  * <ol>
- *   <li>A secret target number (1–100) is chosen randomly.</li>
- *   <li>Active players each submit one guess in chat.</li>
- *   <li>When all active players have guessed, the round closes.</li>
- *   <li>The player closest to the target scores a point (ties broken by first guess).</li>
- *   <li>After {@code maxRounds} rounds, the player with the most points wins.</li>
+ *   <li>A {@link WavelengthConfig.Scale} and prompt are chosen randomly from config.</li>
+ *   <li>Players see the scale (min ↔ max) and the prompt, then type a number 1–100.</li>
+ *   <li>A secret target is generated; the player closest wins the round.</li>
+ *   <li>After all configured rounds, the player with the most points wins.</li>
  * </ol>
  *
- * <h3>Permissions</h3>
- * <ul>
- *   <li>{@value #PERM_PLAY}     — default {@code true}; required to participate.</li>
- *   <li>{@value #PERM_OVERRIDE} — bypasses chat block; can still play.</li>
- * </ul>
+ * <h3>Round durations</h3>
+ * Each round has its own configured duration (e.g. round1=40s, round2=25s).
+ * If a player sends a guess, a private ack is shown; the round closes when
+ * the timer expires (not when all players have guessed).
  *
  * <h3>Thread safety</h3>
- * {@link AsyncPlayerChatEvent} fires async. Guesses and active-player state are
- * protected by {@code synchronized} blocks since {@link HashMap} / {@link HashSet}
- * are not thread-safe. Main-thread Bukkit calls go through {@code runTask()}.
+ * {@link AsyncPlayerChatEvent} fires async. All shared mutable state is guarded
+ * by {@code synchronized(this)}. Main-thread Bukkit calls use {@code runTask()}.
  */
 public final class WavelengthEvent extends ChatEvent implements Listener {
 
@@ -57,45 +56,31 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private static final String PERM_OVERRIDE = "summitevents.overridechat";
 
     // -----------------------------------------------------------------------
-    // Intro timing (ticks; 20 = 1 s)
+    // Intro timing (ticks)
     // -----------------------------------------------------------------------
 
-    private static final long T_RULES      = 60L;   // 3 s after announce
-    private static final long T_HERE_WE_GO = 120L;  // 3 s after rules
-    private static final long T_START      = 160L;  // 2 s after here-we-go
+    private static final long T_RULES      = 60L;
+    private static final long T_HERE_WE_GO = 120L;
+    private static final long T_START      = 160L;
 
     // -----------------------------------------------------------------------
-    // Game state — guarded by intrinsic lock on `this`
+    // Game state — all guarded by synchronized(this) except volatile fields
     // -----------------------------------------------------------------------
 
-    /** Players still active in the current event (eliminated or left players removed). */
-    private final Set<UUID> activePlayers = new HashSet<>();
+    private final Set<UUID>           activePlayers = new HashSet<>();
+    private final Map<UUID, Integer>  guesses       = new HashMap<>();
+    private final Map<UUID, Integer>  points        = new HashMap<>();
 
-    /**
-     * Guesses submitted this round: UUID → guess value.
-     * Protected by synchronized blocks (async chat thread writes, main thread reads).
-     */
-    private final Map<UUID, Integer> guesses = new HashMap<>();
+    private int     currentRound  = 0;
+    private int     target        = 0;
+    private String  currentScaleMin = "";
+    private String  currentScaleMax = "";
+    private String  currentPrompt   = "";
 
-    /**
-     * Cumulative points across rounds: UUID → points.
-     */
-    private final Map<UUID, Integer> points = new HashMap<>();
-
-    /** Current round number (1-indexed). */
-    private int currentRound = 0;
-
-    /** The secret target for the current round. */
-    private int target = 0;
-
-    /** Maximum number of rounds from config. */
-    private int maxRounds = 5;
-
-    /** True once the intro finishes and the game is live. */
     private volatile boolean live = false;
 
-    /** All pending scheduler tasks — cancelled as a group on stop. */
     private final List<BukkitTask> tasks = new ArrayList<>();
+    private final Random           random = new Random();
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -111,15 +96,10 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
     @Override
     protected void onStart() {
-        final PluginConfig cfg = getPlugin().getPluginConfig();
-        maxRounds = cfg.getWavelengthMaxRounds();
-
-        // Reset all state
         synchronized (this) {
             activePlayers.clear();
             guesses.clear();
             points.clear();
-            // Populate active players from all currently online players
             for (final Player p : Bukkit.getOnlinePlayers()) {
                 if (p.hasPermission(PERM_PLAY) || p.hasPermission(PERM_OVERRIDE)) {
                     activePlayers.add(p.getUniqueId());
@@ -133,32 +113,28 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
         Bukkit.getPluginManager().registerEvents(this, getPlugin());
 
-        scheduleIntro(cfg);
+        final WavelengthConfig wcfg = getPlugin().getPluginConfig().getWavelengthConfig();
+        scheduleIntro(wcfg);
     }
 
     @Override
     protected void onStop() {
         live = false;
-
         tasks.forEach(BukkitTask::cancel);
         tasks.clear();
-
         HandlerList.unregisterAll(this);
 
-        final PluginConfig cfg = getPlugin().getPluginConfig();
-
-        // Determine overall winner (most points; ties to whichever has the highest UUID
-        // as a deterministic tiebreaker — fairness note: add timestamp tracking if needed)
-        @Nullable final UUID winnerUuid  = findOverallWinner();
-        @Nullable final Player winner    = winnerUuid != null ? Bukkit.getPlayer(winnerUuid) : null;
-        final String        winnerName  = winner != null ? winner.getName()
-                : (winnerUuid != null ? winnerUuid.toString() : null);
+        final WavelengthConfig wcfg      = getPlugin().getPluginConfig().getWavelengthConfig();
+        @Nullable final UUID   winnerUuid = findOverallWinner();
+        @Nullable final Player winner     = winnerUuid != null ? Bukkit.getPlayer(winnerUuid) : null;
+        @Nullable final String winnerName = resolvePlayerName(winnerUuid, winner);
 
         if (winnerName != null) {
-            broadcast(PluginConfig.format(cfg.getWavelengthMsgWinner(), winnerName));
-            runRewardCommand(cfg, winnerName);
+            broadcast(WavelengthConfig.format(wcfg.getMsgWinner(),
+                    -1, winnerName, -1, -1, null, null, null));
+            runRewardCommand(wcfg, winnerName);
         } else {
-            broadcast(cfg.getWavelengthMsgNoWinner());
+            broadcast(wcfg.getMsgNoWinner());
         }
 
         getPlugin().getLogger().info("[WavelengthEvent] Stopped after round "
@@ -170,18 +146,18 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             points.clear();
         }
         currentRound = 0;
-        target       = 0;
+        target = 0;
     }
 
     // -----------------------------------------------------------------------
-    // Intro sequence — main thread
+    // Intro — main thread
     // -----------------------------------------------------------------------
 
-    private void scheduleIntro(final PluginConfig cfg) {
-        schedule(0L,        () -> broadcast(cfg.getWavelengthMsgAnnounce()));
-        schedule(T_RULES,   () -> broadcast(cfg.getWavelengthMsgRules()));
-        schedule(T_HERE_WE_GO, () -> broadcast(cfg.getWavelengthMsgHereWeGo()));
-        schedule(T_START,   this::startRound);
+    private void scheduleIntro(final WavelengthConfig wcfg) {
+        schedule(0L,           () -> broadcast(wcfg.getMsgAnnounce()));
+        schedule(T_RULES,      () -> broadcast(wcfg.getMsgRules()));
+        schedule(T_HERE_WE_GO, () -> broadcast(wcfg.getMsgHereWeGo()));
+        schedule(T_START,      this::startRound);
     }
 
     // -----------------------------------------------------------------------
@@ -190,58 +166,63 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
     /**
      * Starts the next round.
-     *
-     * <p>Called after the intro and after each round closes (if rounds remain).
-     * Sets {@link #target} to a new random value, clears guesses, increments
-     * {@link #currentRound}, and broadcasts the round-start message.
+     * Picks a random scale + prompt, generates a secret target, and broadcasts
+     * the round-start, scale, and prompt messages before opening guessing.
      */
     private void startRound() {
+        final WavelengthConfig       wcfg  = getPlugin().getPluginConfig().getWavelengthConfig();
+        final WavelengthConfig.Scale scale = wcfg.randomScale(random);
+
         currentRound++;
-        target = 1 + (int) (Math.random() * 100);  // 1–100 inclusive
+        target          = 1 + random.nextInt(100);  // 1–100 inclusive
+        currentScaleMin = scale.getMin();
+        currentScaleMax = scale.getMax();
+        currentPrompt   = scale.randomPrompt(random);
 
         synchronized (this) {
             guesses.clear();
         }
-
         live = true;
 
-        final String msg = PluginConfig.format(
-                getPlugin().getPluginConfig().getWavelengthMsgRoundStart(),
-                null, -1, currentRound);
-        broadcast(msg);
+        // Broadcast round-start, scale, and prompt as three lines
+        broadcast(WavelengthConfig.format(wcfg.getMsgRoundStart(),
+                currentRound, null, -1, -1, null, null, null));
+        broadcast(WavelengthConfig.format(wcfg.getMsgScale(),
+                -1, null, -1, -1, currentScaleMin, currentScaleMax, null));
+        broadcast(WavelengthConfig.format(wcfg.getMsgPrompt(),
+                -1, null, -1, -1, null, null, currentPrompt));
+
+        // Per-round timer from config
+        final long durationTicks = wcfg.getRoundDurationTicks(currentRound);
+        schedule(durationTicks, this::closeRound);
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                + " started. Target: " + target);
+                + " started. Prompt='" + currentPrompt + "' Target=" + target
+                + " Duration=" + (durationTicks / 20) + "s");
     }
 
     /**
-     * Closes the current round.
-     *
-     * <p>Called when all active players have submitted a guess (or on manual stop).
-     * Determines the winner of this round, awards a point, then starts the next
-     * round or ends the event if {@link #maxRounds} is reached.
+     * Closes the current round when the timer fires.
+     * Determines the closest guesser, awards a point, then starts the next
+     * round or ends the event.
      */
     private void closeRound() {
         live = false;
 
-        final PluginConfig cfg = getPlugin().getPluginConfig();
-
-        // Snapshot guesses under lock
+        final WavelengthConfig   wcfg     = getPlugin().getPluginConfig().getWavelengthConfig();
         final Map<UUID, Integer> snapshot;
         synchronized (this) {
             snapshot = new HashMap<>(guesses);
         }
 
-        // Find closest guess (ties broken by insertion order — LinkedHashMap not used,
-        // so tie-breaking here is by UUID comparison for determinism)
+        // Find closest guess — ties broken by whichever entry comes first in iteration
         @Nullable UUID roundWinnerUuid = null;
         int closestDelta = Integer.MAX_VALUE;
-
         for (final Map.Entry<UUID, Integer> entry : snapshot.entrySet()) {
             final int delta = Math.abs(entry.getValue() - target);
             if (delta < closestDelta) {
-                closestDelta     = delta;
-                roundWinnerUuid  = entry.getKey();
+                closestDelta    = delta;
+                roundWinnerUuid = entry.getKey();
             }
         }
 
@@ -250,28 +231,26 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 points.merge(roundWinnerUuid, 1, Integer::sum);
             }
             final Player roundWinner = Bukkit.getPlayer(roundWinnerUuid);
-            final String name = roundWinner != null ? roundWinner.getName()
-                    : roundWinnerUuid.toString();
-            broadcast(cfg.getPrefix() + "&eRound &6" + currentRound
-                    + "&e winner: &6&l" + name
-                    + "&e (guessed &6" + snapshot.get(roundWinnerUuid)
-                    + "&e, target was &6" + target + "&e)!");
+            final String name        = resolvePlayerName(roundWinnerUuid, roundWinner);
+            final int    winGuess    = snapshot.get(roundWinnerUuid);
+
+            broadcast(WavelengthConfig.format(wcfg.getMsgRoundWinner(),
+                    currentRound, name, winGuess, target, null, null, null));
 
             getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                    + " won by " + name + " with guess " + snapshot.get(roundWinnerUuid)
+                    + " won by " + name + " with guess " + winGuess
                     + " (target=" + target + ")");
         } else {
-            broadcast(cfg.getPrefix() + "&7No guesses this round.");
+            broadcast(getPlugin().getPluginConfig().getPrefix() + "&7No guesses this round.");
         }
 
-        if (currentRound >= maxRounds) {
-            // All rounds done — stop through the manager
+        if (currentRound >= wcfg.getRoundCount()) {
             getPlugin().getLogger().info("[WavelengthEvent] All rounds complete.");
+            // Small pause before announcing results
             Bukkit.getScheduler().runTaskLater(getPlugin(),
                     () -> getPlugin().getEventManager().stopCurrentEvent(), 40L);
         } else {
-            // Next round after a short pause
-            schedule(60L, this::startRound);
+            schedule(60L, this::startRound); // 3-second gap between rounds
         }
     }
 
@@ -286,7 +265,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         final boolean canPlay     = hasOverride || player.hasPermission(PERM_PLAY);
         final String  raw         = event.getMessage().trim();
 
-        // Override players: non-number messages pass through freely
+        // Override players: non-number chat passes through freely
         if (hasOverride && !isInteger(raw)) {
             approveMessage(player);
             event.setCancelled(false);
@@ -294,17 +273,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         }
 
         // Everyone else is already cancelled by ChatListener.LOWEST
-        if (!canPlay) {
-            return;
-        }
-
-        if (!live) {
-            return; // Intro or between rounds — suppress
-        }
-
-        if (!isInteger(raw)) {
-            return; // Non-number silently blocked
-        }
+        if (!canPlay || !live) return;
+        if (!isInteger(raw))   return;
 
         final int guess;
         try {
@@ -312,60 +282,41 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         } catch (final NumberFormatException e) {
             return;
         }
+        if (guess < 1 || guess > 100) return;
 
-        if (guess < 1 || guess > 100) {
-            return; // Out of range — silently blocked
-        }
-
-        // Only active players can submit
+        // Only active players participate
         final boolean isActive;
         synchronized (this) {
             isActive = activePlayers.contains(player.getUniqueId());
         }
-        if (!isActive) {
-            return;
-        }
+        if (!isActive) return;
 
-        // Each player may submit only once per round
+        // One guess per round
         final boolean alreadyGuessed;
         synchronized (this) {
             alreadyGuessed = guesses.containsKey(player.getUniqueId());
-            if (!alreadyGuessed) {
-                guesses.put(player.getUniqueId(), guess);
-            }
+            if (!alreadyGuessed) guesses.put(player.getUniqueId(), guess);
         }
-        if (alreadyGuessed) {
-            return;
-        }
+        if (alreadyGuessed) return;
 
-        // Acknowledge the guess — keep the event cancelled, send a private confirmation
-        final String ack = getPlugin().getPluginConfig().getPrefix()
-                + "&7Your guess &e" + guess + "&7 has been recorded!";
-        Bukkit.getScheduler().runTask(getPlugin(), () -> {
-            player.sendMessage(PluginConfig.color(ack));
-
-            // Check if all active players have now guessed
-            final boolean allGuessed;
-            synchronized (this) {
-                allGuessed = guesses.keySet().containsAll(activePlayers);
-            }
-            if (allGuessed) {
-                closeRound();
-            }
-        });
+        // Private ack to the guesser
+        final String ackTemplate = getPlugin().getPluginConfig().getWavelengthConfig().getMsgGuessAck();
+        final String ack = WavelengthConfig.format(ackTemplate, -1, null, guess, -1, null, null, null);
+        Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(ack));
     }
 
     // -----------------------------------------------------------------------
     // Helpers — main thread
     // -----------------------------------------------------------------------
 
-    private void runRewardCommand(final PluginConfig cfg, final String winnerName) {
-        final String cmd = cfg.getWavelengthRewardCommand();
+    private void runRewardCommand(final WavelengthConfig wcfg, final String winnerName) {
+        final String cmd = wcfg.getRewardCommand();
         if (cmd == null || cmd.isBlank()) return;
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
                     cmd.replace("%player%", winnerName));
-            broadcast(PluginConfig.format(cfg.getWavelengthMsgReward(), winnerName));
+            broadcast(WavelengthConfig.format(wcfg.getMsgReward(),
+                    -1, winnerName, -1, -1, null, null, null));
             getPlugin().getLogger().info(
                     "[WavelengthEvent] Reward dispatched for " + winnerName);
         });
@@ -388,10 +339,6 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // Helpers — thread-agnostic
     // -----------------------------------------------------------------------
 
-    /**
-     * Finds the UUID with the most points. Returns {@code null} if no guesses
-     * were submitted in any round.
-     */
     @Nullable
     private UUID findOverallWinner() {
         synchronized (this) {
@@ -403,10 +350,16 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         }
     }
 
-    /** Returns true if {@code s} is a parseable integer (including negatives). */
+    private static String resolvePlayerName(
+            @Nullable final UUID uuid, @Nullable final Player player) {
+        if (player != null) return player.getName();
+        if (uuid   != null) return uuid.toString();
+        return null;
+    }
+
     private static boolean isInteger(final String s) {
         if (s == null || s.isEmpty()) return false;
-        final int start = (s.charAt(0) == '-') ? 1 : 0;
+        final int start = s.charAt(0) == '-' ? 1 : 0;
         if (start == s.length()) return false;
         for (int i = start; i < s.length(); i++) {
             if (!Character.isDigit(s.charAt(i))) return false;
@@ -418,21 +371,14 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // Public accessors
     // -----------------------------------------------------------------------
 
-    public int getCurrentRound() { return currentRound; }
+    public int    getCurrentRound()  { return currentRound; }
+    public int    getTarget()        { return target; }
+    public String getCurrentPrompt() { return currentPrompt; }
 
-    public int getTarget()       { return target; }
-
-    /** Snapshot of current guesses. Safe to call from any thread. */
     public Map<UUID, Integer> getGuessesSnapshot() {
-        synchronized (this) {
-            return Collections.unmodifiableMap(new HashMap<>(guesses));
-        }
+        synchronized (this) { return Collections.unmodifiableMap(new HashMap<>(guesses)); }
     }
-
-    /** Snapshot of active players. Safe to call from any thread. */
     public Set<UUID> getActivePlayersSnapshot() {
-        synchronized (this) {
-            return Collections.unmodifiableSet(new HashSet<>(activePlayers));
-        }
+        synchronized (this) { return Collections.unmodifiableSet(new HashSet<>(activePlayers)); }
     }
 }

@@ -170,7 +170,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         currentNumber.set(2);  // server broadcasts 1; players type from 2
         live = true;
 
-        broadcastStyledNumber(null, 1);  // null sender = server
+        broadcastStyledNumber(1);  // null sender = server
 
         final PluginConfig cfg    = getPlugin().getPluginConfig();
         final int          minSec = cfg.getCountMinDuration();
@@ -252,9 +252,8 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         // No need to set the approval flag; we handle the broadcast ourselves.
 
         final int acceptedNum = sent;
-        final String senderName = player.getName();
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
-            broadcastStyledNumber(senderName, acceptedNum);
+            broadcastStyledNumber(acceptedNum);
             playSoundForAll();
         });
     }
@@ -266,32 +265,16 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     /**
      * Broadcasts a bold, random-hex-coloured number to all online players
      * via the Adventure API (no legacy § escapes, no unicode warnings).
-     *
-     * <p>Format: {@code PlayerName » 42} where the number is coloured and bold,
-     * and the player name is white. When {@code senderName} is null the server
-     * sent the number (opening "1") and no name prefix is shown.
-     *
-     * @param senderName player who typed the number, or {@code null} for server
-     * @param number     the number to display
      */
-    private void broadcastStyledNumber(@Nullable final String senderName, final int number) {
+    private void broadcastStyledNumber(final int number) {
         final int r = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
         final int g = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
         final int b = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
         final TextColor colour = TextColor.color(r, g, b);
 
-        final Component numComponent = Component.text(String.valueOf(number))
+        final Component line = Component.text(String.valueOf(number))
                 .color(colour)
                 .decorate(TextDecoration.BOLD);
-
-        final Component line;
-        if (senderName != null) {
-            line = Component.text(senderName + " \u00bb ")   // "PlayerName » "
-                    .color(TextColor.color(0xFFFFFF))
-                    .append(numComponent);
-        } else {
-            line = numComponent;
-        }
 
         for (final Player p : Bukkit.getOnlinePlayers()) {
             p.sendMessage(line);

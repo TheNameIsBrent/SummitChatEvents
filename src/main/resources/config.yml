@@ -1,44 +1,98 @@
 # ══════════════════════════════════════════════════════
 #  SummitChatEvents — Configuration
-#  Color codes : use & for legacy codes (&a, &c, &e, &l …)
-#  Placeholders: %prefix%  = the prefix value below
-#                %player%  = player / winner name
-#                %number%  = last number reached (count event)
-#                %round%   = current round     (wavelength event)
+#
+#  Color codes : & followed by a code (&a, &c, &e, &l …)
+#  Placeholders available in ALL messages:
+#    %prefix%     — the prefix value defined below
+#  Additional per-event placeholders documented inline.
 # ══════════════════════════════════════════════════════
 
 # Prefix injected wherever %prefix% appears in any message.
 prefix: "&6[&eSummitEvents&6]&r "
 
-# Set to true for verbose console output.
+# Verbose console logging.
 debug: false
 
 events:
 
-  # ── Count Up ───────────────────────────────────────
+  # ── Count Up ─────────────────────────────────────────────────────────────
+  # Players type the next integer in sequence. No two in a row.
   count:
-    min-duration: 30
-    max-duration: 90
+    min-duration: 30   # seconds
+    max-duration: 90   # seconds
     reward-command: "give %player% diamond 3"
 
     messages:
       announce:   "%prefix%&e&lA Count Up event is about to begin! Get ready!"
-      rules:      "%prefix%&7How it works: &fType the next number. No two in a row!"
+      rules:      "%prefix%&7Type the next number in chat. You can't go twice in a row!"
       here-we-go: "%prefix%&a&lHere we go!"
       no-winner:  "%prefix%&cThe event ended &7— &cnobody scored!"
       winner:     "%prefix%&aEvent over! &eWinner: &6&l%player% &awith &e%number%&a. Well played!"
-      reward:     "%prefix%&6%player% &ehas been rewarded for winning!"
+      reward:     "%prefix%&6%player% &ehas been rewarded for winning Count Up!"
 
-  # ── Wavelength ─────────────────────────────────────
+  # ── Wavelength ───────────────────────────────────────────────────────────
+  # Players are shown a scale (min ↔ max) and a prompt, then type a
+  # number 1–100 placing the prompt on that scale. Closest to the hidden
+  # target wins the round.
+  #
+  # Placeholders available in messages:
+  #   %round%      — current round number
+  #   %player%     — player / winner name
+  #   %guess%      — a player's guess value
+  #   %target%     — the secret target (shown at round end)
+  #   %scale_min%  — low-end label of the active scale
+  #   %scale_max%  — high-end label of the active scale
+  #   %prompt%     — the active prompt word / phrase
   wavelength:
-    max-rounds: 5
+    reward-command: "give %player% emerald 3"
+
+    # Per-round durations in seconds.
+    # Keys must start with "round" and be in lexicographic order.
+    # If the event has more rounds than entries, the last duration is reused.
+    rounds:
+      round1-duration: 40
+      round2-duration: 30
+      round3-duration: 20
+
+    # Scales: each entry has a min label, a max label, and a list of prompts.
+    # A random scale is chosen each round; a random prompt from that scale is shown.
+    scales:
+      - scale-min: "Worst mob"
+        scale-max: "Best mob"
+        prompts:
+          - "Creeper"
+          - "Zombie"
+          - "Skeleton"
+          - "Enderman"
+          - "Blaze"
+
+      - scale-min: "Useless item"
+        scale-max: "Most useful item"
+        prompts:
+          - "Stick"
+          - "Feather"
+          - "Diamond Pickaxe"
+          - "Crafting Table"
+          - "Bucket"
+
+      - scale-min: "Easy biome"
+        scale-max: "Hardest biome to survive in"
+        prompts:
+          - "Plains"
+          - "Desert"
+          - "Nether Wastes"
+          - "Deep Dark"
+          - "Mushroom Island"
 
     messages:
-      announce:   "%prefix%&d&lA Wavelength event is starting! Get ready to guess!"
-      rules:      "%prefix%&7How it works: &fGuess a number between 1 and 100. Closest wins the round!"
-      here-we-go: "%prefix%&a&lHere we go!"
-      round-start: "%prefix%&eRound &6&l%round%&e has started! Type your guess (1-100)."
-      no-winner:  "%prefix%&cThe event ended &7— &cnobody scored!"
-      winner:     "%prefix%&aEvent over! &eWinner: &6&l%player%&a. Well played!"
-      reward:     "%prefix%&6%player% &ehas been rewarded for winning Wavelength!"
-    reward-command: "give %player% emerald 3"
+      announce:     "%prefix%&d&lA Wavelength event is starting! Think carefully..."
+      rules:        "%prefix%&7Place the prompt on the scale by typing a number &e1&7-&e100&7."
+      here-we-go:   "%prefix%&a&lHere we go!"
+      round-start:  "%prefix%&eRound &6&l%round%&e has started!"
+      scale:        "%prefix%&7Scale: &e%scale_min% &7<-> &e%scale_max%"
+      prompt:       "%prefix%&fPrompt: &d&l%prompt%"
+      round-winner: "%prefix%&eRound &6%round%&e winner: &6&l%player% &e(guessed &6%guess%&e, target was &6%target%&e)!"
+      no-winner:    "%prefix%&cThe event ended &7— &cnobody scored!"
+      winner:       "%prefix%&aEvent over! &eOverall winner: &6&l%player%&a!"
+      reward:       "%prefix%&6%player% &ehas been rewarded for winning Wavelength!"
+      guess-ack:    "%prefix%&7Your guess &e%guess%&7 has been recorded. Wait for the round to end!"

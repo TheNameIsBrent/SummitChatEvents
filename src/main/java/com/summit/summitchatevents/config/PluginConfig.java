@@ -10,6 +10,8 @@ import org.bukkit.configuration.file.FileConfiguration;
  * <p>Construct a new instance after every config reload. All values are read
  * once at construction time; {@code &} colour codes are translated to § on load,
  * and {@code %prefix%} is substituted in every message field.
+ *
+ * <p>Wavelength-specific config is delegated to {@link WavelengthConfig}.
  */
 public final class PluginConfig {
 
@@ -35,18 +37,10 @@ public final class PluginConfig {
     private final String countMsgReward;
 
     // -----------------------------------------------------------------------
-    // Wavelength event
+    // Wavelength event — fully delegated
     // -----------------------------------------------------------------------
 
-    private final int    wavelengthMaxRounds;
-    private final String wavelengthRewardCommand;
-    private final String wavelengthMsgAnnounce;
-    private final String wavelengthMsgRules;
-    private final String wavelengthMsgHereWeGo;
-    private final String wavelengthMsgRoundStart;
-    private final String wavelengthMsgWinner;
-    private final String wavelengthMsgNoWinner;
-    private final String wavelengthMsgReward;
+    private final WavelengthConfig wavelengthConfig;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -55,8 +49,9 @@ public final class PluginConfig {
     public PluginConfig(final SummitChatEventsPlugin plugin) {
         final FileConfiguration cfg = plugin.getConfig();
 
-        // Read raw prefix first (no substitution on itself)
-        prefix = color(cfg.getString("prefix", "&6[&eSummitEvents&6]&r "));
+        // Raw prefix for %prefix% substitution (translated separately)
+        final String rawPrefix = cfg.getString("prefix", "&6[&eSummitEvents&6]&r ");
+        prefix = color(rawPrefix == null ? "" : rawPrefix);
         debug  = cfg.getBoolean("debug", false);
 
         // ── Count Up ────────────────────────────────────────────────────────
@@ -64,40 +59,26 @@ public final class PluginConfig {
         countMaxDuration   = cfg.getInt("events.count.max-duration", 90);
         countRewardCommand = cfg.getString("events.count.reward-command", "");
 
-        countMsgAnnounce  = msg(cfg, "events.count.messages.announce",
+        countMsgAnnounce  = msg(cfg, rawPrefix, "events.count.messages.announce",
                 "%prefix%&e&lA Count Up event is about to begin! Get ready!");
-        countMsgRules     = msg(cfg, "events.count.messages.rules",
+        countMsgRules     = msg(cfg, rawPrefix, "events.count.messages.rules",
                 "%prefix%&7How it works: &fType the next number. No two in a row!");
-        countMsgHereWeGo  = msg(cfg, "events.count.messages.here-we-go",
+        countMsgHereWeGo  = msg(cfg, rawPrefix, "events.count.messages.here-we-go",
                 "%prefix%&a&lHere we go!");
-        countMsgWinner    = msg(cfg, "events.count.messages.winner",
+        countMsgWinner    = msg(cfg, rawPrefix, "events.count.messages.winner",
                 "%prefix%&aEvent over! &eWinner: &6&l%player% &awith &e%number%&a!");
-        countMsgNoWinner  = msg(cfg, "events.count.messages.no-winner",
+        countMsgNoWinner  = msg(cfg, rawPrefix, "events.count.messages.no-winner",
                 "%prefix%&cThe event ended \u2014 nobody scored!");
-        countMsgReward    = msg(cfg, "events.count.messages.reward",
+        countMsgReward    = msg(cfg, rawPrefix, "events.count.messages.reward",
                 "%prefix%&6%player% &ehas been rewarded!");
 
         // ── Wavelength ───────────────────────────────────────────────────────
-        wavelengthMaxRounds     = cfg.getInt("events.wavelength.max-rounds", 5);
-        wavelengthRewardCommand = cfg.getString("events.wavelength.reward-command", "");
-
-        wavelengthMsgAnnounce   = msg(cfg, "events.wavelength.messages.announce",
-                "%prefix%&d&lA Wavelength event is starting! Get ready to guess!");
-        wavelengthMsgRules      = msg(cfg, "events.wavelength.messages.rules",
-                "%prefix%&7How it works: &fGuess a number between 1 and 100. Closest wins!");
-        wavelengthMsgHereWeGo   = msg(cfg, "events.wavelength.messages.here-we-go",
-                "%prefix%&a&lHere we go!");
-        wavelengthMsgRoundStart = msg(cfg, "events.wavelength.messages.round-start",
-                "%prefix%&eRound &6&l%round%&e started! Type your guess (1-100).");
-        wavelengthMsgWinner     = msg(cfg, "events.wavelength.messages.winner",
-                "%prefix%&aEvent over! &eWinner: &6&l%player%&a. Well played!");
-        wavelengthMsgNoWinner   = msg(cfg, "events.wavelength.messages.no-winner",
-                "%prefix%&cThe event ended \u2014 nobody scored!");
-        wavelengthMsgReward     = msg(cfg, "events.wavelength.messages.reward",
-                "%prefix%&6%player% &ehas been rewarded for winning Wavelength!");
+        wavelengthConfig = new WavelengthConfig(cfg,
+                rawPrefix == null ? "" : rawPrefix,
+                plugin.getLogger());
 
         if (debug) {
-            plugin.getLogger().info("[Config] prefix='" + prefix + "'");
+            plugin.getLogger().info("[Config] prefix='" + prefix + "' loaded.");
         }
     }
 
@@ -126,15 +107,7 @@ public final class PluginConfig {
     // Accessors — Wavelength
     // -----------------------------------------------------------------------
 
-    public int    getWavelengthMaxRounds()     { return wavelengthMaxRounds; }
-    public String getWavelengthRewardCommand() { return wavelengthRewardCommand; }
-    public String getWavelengthMsgAnnounce()   { return wavelengthMsgAnnounce; }
-    public String getWavelengthMsgRules()      { return wavelengthMsgRules; }
-    public String getWavelengthMsgHereWeGo()   { return wavelengthMsgHereWeGo; }
-    public String getWavelengthMsgRoundStart() { return wavelengthMsgRoundStart; }
-    public String getWavelengthMsgWinner()     { return wavelengthMsgWinner; }
-    public String getWavelengthMsgNoWinner()   { return wavelengthMsgNoWinner; }
-    public String getWavelengthMsgReward()     { return wavelengthMsgReward; }
+    public WavelengthConfig getWavelengthConfig() { return wavelengthConfig; }
 
     // -----------------------------------------------------------------------
     // Static helpers
@@ -145,15 +118,7 @@ public final class PluginConfig {
         return s == null ? "" : ChatColor.translateAlternateColorCodes('&', s);
     }
 
-    /**
-     * Reads a message from YAML (falling back to {@code def}), translates
-     * colour codes, then substitutes {@code %player%}, {@code %number%}, and
-     * {@code %round%} placeholders.
-     *
-     * @param player   player name  — pass {@code null} to skip substitution
-     * @param number   numeric value — pass {@code -1} to skip
-     * @param round    round number  — pass {@code -1} to skip
-     */
+    /** Replaces {@code %player%}, {@code %number%}, and {@code %round%} in a template. */
     public static String format(
             final String template,
             final @org.jetbrains.annotations.Nullable String player,
@@ -167,12 +132,10 @@ public final class PluginConfig {
         return s;
     }
 
-    /** Convenience overload for player + number (count event). */
     public static String format(final String template, final String player, final int number) {
         return format(template, player, number, -1);
     }
 
-    /** Convenience overload for player only. */
     public static String format(final String template, final String player) {
         return format(template, player, -1, -1);
     }
@@ -181,22 +144,11 @@ public final class PluginConfig {
     // Private helpers
     // -----------------------------------------------------------------------
 
-    /**
-     * Reads a YAML string, applies the {@code %prefix%} substitution, then
-     * translates colour codes. Used for all message fields.
-     */
-    private String msg(final FileConfiguration cfg, final String key, final String def) {
+    /** Reads a YAML string, substitutes %prefix%, then translates colour codes. */
+    private static String msg(final FileConfiguration cfg, final String rawPrefix,
+                              final String key, final String def) {
         final String raw = cfg.getString(key, def);
-        return color(raw == null ? def : raw.replace("%prefix%", getRawPrefix(cfg)));
-    }
-
-    /**
-     * Returns the raw (& not yet translated) prefix string from config,
-     * used only during construction so {@code %prefix%} is substituted before
-     * colour translation.
-     */
-    private static String getRawPrefix(final FileConfiguration cfg) {
-        final String raw = cfg.getString("prefix", "&6[&eSummitEvents&6]&r ");
-        return raw == null ? "" : raw;
+        return color((raw == null ? def : raw).replace("%prefix%",
+                rawPrefix == null ? "" : rawPrefix));
     }
 }
