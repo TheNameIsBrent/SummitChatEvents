@@ -2,8 +2,12 @@ package com.summit.summitchatevents.events.impl;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
 import com.summit.summitchatevents.events.ChatEvent;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -14,6 +18,7 @@ import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -22,28 +27,32 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <h3>Rules</h3>
  * <ul>
- *   <li>The server broadcasts "1" to start; players must continue from 2.</li>
- *   <li>All chat is suppressed while the event is active.</li>
- *   <li>Only a message that exactly equals the next integer is accepted.</li>
- *   <li>The correct message is allowed through as-is from the player — it is
- *       styled (bold + random colour) via the Bukkit chat format, not re-sent
- *       by the server.</li>
- *   <li>The first player to send the correct number wins the race; all later
- *       duplicates in the same tick are silently cancelled.</li>
- *   <li>The event runs for a random duration between 30 and 90 seconds, then
- *       stops automatically and announces the winner.</li>
+ *   <li>The server broadcasts "1" to open; players continue from 2.</li>
+ *   <li>All chat is suppressed while the event is active, except for players
+ *       holding the {@value #PERM_OVERRIDE} permission.</li>
+ *   <li>A player cannot send two consecutive correct numbers — another player
+ *       must submit in between.</li>
+ *   <li>The first player to send the correct number wins the race (CAS-safe).</li>
+ *   <li>Correct numbers are styled bold with a random HTML hex colour.</li>
+ *   <li>Every correct submission plays the XP orb sound for all online players.</li>
+ *   <li>The event runs for a random 30–90 second duration, then announces winner.</li>
  * </ul>
  *
  * <h3>Thread safety</h3>
- * {@link AsyncPlayerChatEvent} fires on async threads. {@link #currentNumber}
- * and {@link #lastPlayer} are atomic so the compare-and-set is race-condition
- * safe. All Bukkit API calls that require the main thread are dispatched via
- * {@code runTask()}.
+ * {@link AsyncPlayerChatEvent} fires on async threads. All mutable state uses
+ * atomics. Main-thread-only Bukkit calls are dispatched via {@code runTask()}.
  */
 public final class CountUpEvent extends ChatEvent implements Listener {
 
     // -----------------------------------------------------------------------
-    // Timing constants
+    // Permissions
+    // -----------------------------------------------------------------------
+
+    /** Players with this permission bypass the chat block during the event. */
+    private static final String PERM_OVERRIDE = "summitevents.overridechat";
+
+    // -----------------------------------------------------------------------
+    // Timing
     // -----------------------------------------------------------------------
 
     private static final int MIN_DURATION_SECONDS = 30;
@@ -51,16 +60,15 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     private static final int TICKS_PER_SECOND     = 20;
 
     // -----------------------------------------------------------------------
-    // Chat colours used for correct-number styling (bold + random colour)
+    // Sound
     // -----------------------------------------------------------------------
 
-    private static final ChatColor[] COLORS = {
-        ChatColor.RED, ChatColor.GOLD, ChatColor.YELLOW, ChatColor.GREEN,
-        ChatColor.AQUA, ChatColor.LIGHT_PURPLE, ChatColor.WHITE
-    };
+    private static final Sound  CORRECT_SOUND        = Sound.ENTITY_EXPERIENCE_ORB_PICKUP;
+    private static final float  CORRECT_SOUND_VOLUME = 1.0f;
+    private static final float  CORRECT_SOUND_PITCH  = 1.0f;
 
     // -----------------------------------------------------------------------
-    // Messages
+    // Messages (§-coded for legacy broadcastMessage; winner uses Adventure)
     // -----------------------------------------------------------------------
 
     private static final String PREFIX     = "\u00a76[\u00a7eCount Up\u00a76] \u00a7r";
@@ -69,26 +77,32 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     private static final String WINNER_MSG =
             PREFIX + "\u00a7aThe event is over! \u00a7eWinner: \u00a76%s \u00a7awith the last number \u00a7e%d\u00a7a!";
     private static final String NO_WIN_MSG =
-            PREFIX + "\u00a7cThe event ended — nobody scored!";
+            PREFIX + "\u00a7cThe event ended \u2014 nobody scored!";
     private static final String STOP_LOG   =
-            "[CountUpEvent] Stopped. Highest number: %d. Winner: %s";
+            "[CountUpEvent] Stopped. Highest: %d. Winner: %s";
 
     // -----------------------------------------------------------------------
-    // State
+    // State — all mutable fields are atomic for async-thread safety
     // -----------------------------------------------------------------------
 
     /**
-     * The number players must send next (starts at 2 — the server sends 1).
-     * All reads/writes from the async chat thread go through this atomic.
+     * Next number players must type. Starts at 2 (server sends 1), resets to 0 on stop.
      */
     private final AtomicInteger currentNumber = new AtomicInteger(0);
 
     /**
-     * The last player who sent a correct number.
+     * UUID of the last player who sent a correct number.
+     * Using UUID (not Player) avoids holding a stale entity reference.
+     * {@code null} if no one has scored yet.
      */
-    private final AtomicReference<Player> lastPlayer = new AtomicReference<>(null);
+    private final AtomicReference<UUID> lastPlayerUuid = new AtomicReference<>(null);
 
-    /** Scheduler task that fires when the event timer expires. Nullable until started. */
+    /**
+     * Cached display name of the last player who scored (set alongside UUID).
+     */
+    private final AtomicReference<String> lastPlayerName = new AtomicReference<>(null);
+
+    /** Scheduler task that fires when the event timer expires. */
     @Nullable
     private BukkitTask timerTask;
 
@@ -103,79 +117,64 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     }
 
     // -----------------------------------------------------------------------
-    // ChatEvent lifecycle
+    // ChatEvent lifecycle — called on the main thread
     // -----------------------------------------------------------------------
 
     @Override
     protected void onStart() {
-        // Reset state
-        currentNumber.set(2);  // server sends 1, players continue from 2
-        lastPlayer.set(null);
+        currentNumber.set(2);       // server posts 1; players start from 2
+        lastPlayerUuid.set(null);
+        lastPlayerName.set(null);
 
-        // Register this instance as a Bukkit listener
         Bukkit.getPluginManager().registerEvents(this, getPlugin());
 
-        // Broadcast start and the opening number "1"
-        final String styledOne = styledNumber(1);
         Bukkit.broadcastMessage(START_MSG);
-        Bukkit.broadcastMessage(styledOne);
+        broadcastStyledNumber(1);   // server-originated opening "1"
 
-        // Schedule the random-duration timer
-        final int durationSeconds = MIN_DURATION_SECONDS
+        // Random timer
+        final int  durationSec   = MIN_DURATION_SECONDS
                 + random.nextInt(MAX_DURATION_SECONDS - MIN_DURATION_SECONDS + 1);
-        final long durationTicks = (long) durationSeconds * TICKS_PER_SECOND;
-
+        final long durationTicks = (long) durationSec * TICKS_PER_SECOND;
         timerTask = Bukkit.getScheduler().runTaskLater(getPlugin(), this::onTimerExpired, durationTicks);
 
         getPlugin().getLogger().info(
-            "[CountUpEvent] Started — duration: " + durationSeconds + "s (" + durationTicks + " ticks)."
-        );
+                "[CountUpEvent] Started — duration: " + durationSec + "s.");
     }
 
     @Override
     protected void onStop() {
-        // Cancel the timer if it hasn't fired yet (e.g. manual /stop)
         if (timerTask != null) {
             timerTask.cancel();
             timerTask = null;
         }
 
-        // Unregister this instance's Bukkit listeners
         HandlerList.unregisterAll(this);
 
-        final int reached    = currentNumber.get() - 1;
-        final Player winner  = lastPlayer.get();
+        final int    reached    = Math.max(currentNumber.get() - 1, 0);
+        final String winnerName = lastPlayerName.get();
 
-        if (winner != null) {
-            Bukkit.broadcastMessage(String.format(WINNER_MSG, winner.getName(), reached));
+        if (winnerName != null) {
+            Bukkit.broadcastMessage(String.format(WINNER_MSG, winnerName, reached));
         } else {
             Bukkit.broadcastMessage(NO_WIN_MSG);
         }
 
-        getPlugin().getLogger().info(String.format(
-            STOP_LOG,
-            Math.max(reached, 0),
-            winner != null ? winner.getName() : "none"
-        ));
+        getPlugin().getLogger().info(String.format(STOP_LOG, reached,
+                winnerName != null ? winnerName : "none"));
 
-        // Reset for potential restart
+        // Reset for clean restart
         currentNumber.set(0);
-        lastPlayer.set(null);
+        lastPlayerUuid.set(null);
+        lastPlayerName.set(null);
     }
 
     // -----------------------------------------------------------------------
-    // Timer callback — main thread (runTaskLater guarantees this)
+    // Timer callback — guaranteed on the main thread via runTaskLater
     // -----------------------------------------------------------------------
 
-    /**
-     * Called on the main thread when the event's random duration expires.
-     * Delegates to {@link com.summit.summitchatevents.managers.EventManager}
-     * via the plugin so the manager's state (activeEvent) is also cleared.
-     */
     private void onTimerExpired() {
-        timerTask = null; // already fired — nothing to cancel
-        getPlugin().getLogger().info("[CountUpEvent] Timer expired — stopping event.");
-        // Stop through the manager so its activeEvent reference is cleared
+        timerTask = null;
+        getPlugin().getLogger().info("[CountUpEvent] Timer expired — stopping.");
         getPlugin().getEventManager().stopCurrentEvent();
     }
 
@@ -183,21 +182,18 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // Chat handler — runs on an ASYNC thread
     // -----------------------------------------------------------------------
 
-    /**
-     * Intercepts all player chat while the event is active.
-     *
-     * <p>Priority {@code LOWEST} so we run first. {@code ignoreCancelled = false}
-     * ensures we suppress chat even if another plugin already cancelled it.
-     *
-     * <p>When the correct number is received, the message is <em>allowed through</em>
-     * with a styled format (bold + random colour) instead of being re-sent by the
-     * server. This preserves the player as the sender in chat.
-     */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPlayerChat(final AsyncPlayerChatEvent event) {
+        final Player player = event.getPlayer();
+
+        // Players with override permission pass through unrestricted
+        if (player.hasPermission(PERM_OVERRIDE)) {
+            return;
+        }
+
         final String raw = event.getMessage().trim();
 
-        // Always cancel first — we un-cancel only for the winning submission
+        // Suppress all chat by default
         event.setCancelled(true);
 
         if (!isPositiveInteger(raw)) {
@@ -216,54 +212,82 @@ public final class CountUpEvent extends ChatEvent implements Listener {
             return; // Wrong number — silently blocked
         }
 
-        // Race-condition safe: only the first thread to CAS succeeds
-        if (!currentNumber.compareAndSet(expected, expected + 1)) {
-            return; // Another thread already claimed this number
+        // Prevent the same player from sending two consecutive numbers
+        if (player.getUniqueId().equals(lastPlayerUuid.get())) {
+            return; // Consecutive send — silently blocked
         }
 
-        // Record the winner of this round
-        lastPlayer.set(event.getPlayer());
+        // Race-safe claim: only the first thread to CAS succeeds
+        if (!currentNumber.compareAndSet(expected, expected + 1)) {
+            return; // Another thread beat us — silently blocked
+        }
 
-        // Style the message and un-cancel so it goes through from the player
-        final String styled = styledNumber(sent);
+        // Record winner of this round
+        lastPlayerUuid.set(player.getUniqueId());
+        lastPlayerName.set(player.getName());
+
+        // Style the message in-place and un-cancel so it comes from the player
+        final String styled = buildStyledString(sent);
         event.setMessage(styled);
-        event.setFormat(styled); // replaces the entire chat line (no name prefix)
+        event.setFormat(styled);    // drops name prefix — pure number in chat
         event.setCancelled(false);
+
+        // Play sound and update live display on the main thread
+        Bukkit.getScheduler().runTask(getPlugin(), () -> playSoundForAll());
     }
 
     // -----------------------------------------------------------------------
-    // Public accessors
-    // -----------------------------------------------------------------------
-
-    /** @return the next number players must type, or {@code 0} if not running */
-    public int getCurrentNumber() {
-        return currentNumber.get();
-    }
-
-    /** @return the last player who sent a correct number, or {@code null} if none yet */
-    @Nullable
-    public Player getLastPlayer() {
-        return lastPlayer.get();
-    }
-
-    // -----------------------------------------------------------------------
-    // Helpers
+    // Helpers — main-thread side
     // -----------------------------------------------------------------------
 
     /**
-     * Formats a number as bold with a random chat colour.
-     * Called from both the main thread (for "1") and async threads (for player
-     * submissions) — {@link Random} is not thread-safe, but a race here only
-     * affects colour choice, not correctness, so it is acceptable.
+     * Broadcasts a styled number as a server message (used for the opening "1").
+     * Must be called from the main thread.
      */
-    private String styledNumber(final int number) {
-        final ChatColor colour = COLORS[random.nextInt(COLORS.length)];
-        return colour.toString() + ChatColor.BOLD + number;
+    private void broadcastStyledNumber(final int number) {
+        Bukkit.broadcastMessage(buildStyledString(number));
     }
 
     /**
-     * Fast check: is {@code s} a positive integer string with no leading zeros?
-     * Avoids allocation; rejects anything that would overflow {@code int}.
+     * Plays the XP-orb pickup sound at full volume for every online player.
+     * Must be called from the main thread.
+     */
+    private void playSoundForAll() {
+        for (final Player p : Bukkit.getOnlinePlayers()) {
+            p.playSound(p.getLocation(), CORRECT_SOUND, CORRECT_SOUND_VOLUME, CORRECT_SOUND_PITCH);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers — thread-agnostic
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns a legacy-format string for {@code number} styled bold in a
+     * random HTML hex colour using Adventure's {@link TextColor#color(int)}.
+     *
+     * <p>The resulting string is compatible with {@link AsyncPlayerChatEvent#setFormat}
+     * which still uses the legacy § system. We build an Adventure {@link Component},
+     * then serialise it back to a legacy string.
+     */
+    private String buildStyledString(final int number) {
+        // Generate a random RGB colour with minimum brightness so it's readable
+        final int r = 80 + random.nextInt(176);   // 80–255
+        final int g = 80 + random.nextInt(176);
+        final int b = 80 + random.nextInt(176);
+
+        final Component component = Component.text(String.valueOf(number))
+                .color(TextColor.color(r, g, b))
+                .decorate(TextDecoration.BOLD);
+
+        // Serialise to §x§r§g§b hex format understood by the legacy chat system
+        return LegacyComponentSerializer.legacySection().serialize(component);
+    }
+
+    /**
+     * Fast positive-integer check with no allocation.
+     * Rejects empty strings, leading zeros, and strings longer than 10 chars
+     * (which cannot fit in a signed 32-bit integer).
      */
     private static boolean isPositiveInteger(final String s) {
         if (s.isEmpty() || s.length() > 10) return false;
@@ -271,5 +295,20 @@ public final class CountUpEvent extends ChatEvent implements Listener {
             if (!Character.isDigit(s.charAt(i))) return false;
         }
         return s.charAt(0) != '0';
+    }
+
+    // -----------------------------------------------------------------------
+    // Public accessors
+    // -----------------------------------------------------------------------
+
+    /** @return the next number players must type, or 0 if the event is not running */
+    public int getCurrentNumber() {
+        return currentNumber.get();
+    }
+
+    /** @return the name of the last player who scored, or {@code null} if none yet */
+    @Nullable
+    public String getLastPlayerName() {
+        return lastPlayerName.get();
     }
 }

@@ -19,3 +19,6 @@ permissions:
   summitevents.start:
     description: Allows starting a Summit event via /summitevent start <name>.
     default: op
+  summitevents.overridechat:
+    description: Allows bypassing chat restrictions during an active Summit event.
+    default: op
