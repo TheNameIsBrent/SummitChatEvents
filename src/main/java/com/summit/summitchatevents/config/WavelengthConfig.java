@@ -111,6 +111,11 @@ public final class WavelengthConfig {
     private final String msgNoWinner;
     private final String msgReward;
     private final String msgGuessAck;
+    private final String msgRoundResult;
+    private final String msgTieContinues;
+    private final String msgTieEliminated;
+    private final String msgTieAdvanced;
+    private final String msgMultipleWinners;
 
     // -----------------------------------------------------------------------
     // Constructor — called by PluginConfig
@@ -201,8 +206,18 @@ public final class WavelengthConfig {
                 "%prefix%&cThe event ended \u2014 nobody scored!");
         msgReward     = msg(yaml, rawPrefix, msgBase + ".reward",
                 "%prefix%&6%player% &ehas been rewarded for winning Wavelength!");
-        msgGuessAck   = msg(yaml, rawPrefix, msgBase + ".guess-ack",
+        msgGuessAck       = msg(yaml, rawPrefix, msgBase + ".guess-ack",
                 "%prefix%&7Your guess &e%guess%&7 has been recorded!");
+        msgRoundResult    = msg(yaml, rawPrefix, msgBase + ".round-result",
+                "%prefix%&eThe average was &6%average%&e. Closest: &6&l%player% &e(guessed &6%guess%&e)!");
+        msgTieContinues   = msg(yaml, rawPrefix, msgBase + ".tie-continues",
+                "%prefix%&6&lTie! &eThese players continue: &6%players%");
+        msgTieEliminated  = msg(yaml, rawPrefix, msgBase + ".tie-eliminated",
+                "%prefix%&cYou have been eliminated. Better luck next time!");
+        msgTieAdvanced    = msg(yaml, rawPrefix, msgBase + ".tie-advanced",
+                "%prefix%&aYou advanced! Place your guess again.");
+        msgMultipleWinners = msg(yaml, rawPrefix, msgBase + ".multiple-winners",
+                "%prefix%&6&lIt\u2019s a tie! &eAll tied players win: &6%players%");
 
         if (log.isLoggable(java.util.logging.Level.FINE)) {
             log.fine("[WavelengthConfig] Loaded " + scales.size() + " scale(s), "
@@ -257,7 +272,12 @@ public final class WavelengthConfig {
     public String getMsgWinner()      { return msgWinner; }
     public String getMsgNoWinner()    { return msgNoWinner; }
     public String getMsgReward()      { return msgReward; }
-    public String getMsgGuessAck()    { return msgGuessAck; }
+    public String getMsgGuessAck()       { return msgGuessAck; }
+    public String getMsgRoundResult()    { return msgRoundResult; }
+    public String getMsgTieContinues()   { return msgTieContinues; }
+    public String getMsgTieEliminated()  { return msgTieEliminated; }
+    public String getMsgTieAdvanced()    { return msgTieAdvanced; }
+    public String getMsgMultipleWinners(){ return msgMultipleWinners; }
 
     // -----------------------------------------------------------------------
     // Message formatting helpers
@@ -280,6 +300,24 @@ public final class WavelengthConfig {
             final @Nullable String scaleMax,
             final @Nullable String prompt
     ) {
+        return format(template, round, player, guess, target, scaleMin, scaleMax, prompt, null, null);
+    }
+
+    /**
+     * Full format method including {@code %average%} and {@code %players%}.
+     */
+    public static String format(
+            final String template,
+            final int round,
+            final @Nullable String player,
+            final int guess,
+            final int target,
+            final @Nullable String scaleMin,
+            final @Nullable String scaleMax,
+            final @Nullable String prompt,
+            final @Nullable String average,
+            final @Nullable String players
+    ) {
         String s = template;
         if (round    >= 0)    s = s.replace("%round%",     String.valueOf(round));
         if (player   != null) s = s.replace("%player%",    player);
@@ -288,6 +326,8 @@ public final class WavelengthConfig {
         if (scaleMin != null) s = s.replace("%scale_min%", scaleMin);
         if (scaleMax != null) s = s.replace("%scale_max%", scaleMax);
         if (prompt   != null) s = s.replace("%prompt%",    prompt);
+        if (average  != null) s = s.replace("%average%",   average);
+        if (players  != null) s = s.replace("%players%",   players);
         return s;
     }
 

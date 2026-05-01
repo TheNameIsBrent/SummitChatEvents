@@ -88,11 +88,19 @@ events:
       announce:     "%prefix%&d&lA Wavelength event is starting! Think carefully..."
       rules:        "%prefix%&7Place the prompt on the scale by typing a number &e1&7-&e100&7."
       here-we-go:   "%prefix%&a&lHere we go!"
-      round-start:  "%prefix%&eRound &6&l%round%&e has started!"
       scale:        "%prefix%&7Scale: &e%scale_min% &7<-> &e%scale_max%"
       prompt:       "%prefix%&fPrompt: &d&l%prompt%"
-      round-winner: "%prefix%&eRound &6%round%&e winner: &6&l%player% &e(guessed &6%guess%&e, target was &6%target%&e)!"
+      # Shown after each round (average and closest player)
+      round-result: "%prefix%&eThe average guess was &6%average%&e. Closest: &6&l%player% &e(guessed &6%guess%&e)!"
+      # Broadcast when 3+ players tie and the event continues
+      tie-continues: "%prefix%&6&lIt's a tie! &eThe following players continue to the next round: &6%players%"
+      # Private message to players who are eliminated after a tie round
+      tie-eliminated: "%prefix%&cYou have been eliminated. Better luck next time!"
+      # Private message to players who advance after a tie round
+      tie-advanced: "%prefix%&aYou advanced to the next round! Place your guess again."
+      # Shown when 3+ players tie on the final round — all win together
+      multiple-winners: "%prefix%&6&lIt's a tie! &eAll tied players win: &6%players%"
       no-winner:    "%prefix%&cThe event ended &7— &cnobody scored!"
-      winner:       "%prefix%&aEvent over! &eOverall winner: &6&l%player%&a!"
+      winner:       "%prefix%&aEvent over! &eWinner: &6&l%player%&a!"
       reward:       "%prefix%&6%player% &ehas been rewarded for winning Wavelength!"
       guess-ack:    "%prefix%&7Your guess &e%guess%&7 has been recorded. Wait for the round to end!"
