@@ -93,7 +93,8 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     private final List<BukkitTask> tasks = new ArrayList<>();
 
     /** True once the intro finishes and the counting game is live. */
-    private volatile boolean live = false;
+    private volatile boolean live           = false;
+    private volatile boolean stoppedByAdmin = false;
 
     private final Random random = new Random();
 
@@ -116,7 +117,8 @@ public final class CountUpEvent extends ChatEvent implements Listener {
 
     @Override
     protected void onStart() {
-        live = false;
+        live           = false;
+        stoppedByAdmin = false;
         currentNumber.set(0);
         lastPlayerUuid.set(null);
         lastPlayerName.set(null);
@@ -141,7 +143,9 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         final int          count  = Math.max(currentNumber.get() - 1, 0);
         final String       winner = lastPlayerName.get();
 
-        if (winner != null) {
+        if (stoppedByAdmin) {
+            // Force-stopped — stop command already broadcast the message, no result shown
+        } else if (winner != null) {
             broadcast(PluginConfig.format(cfg.getCountMsgWinner(), winner, count));
             runRewardCommand(cfg, winner);
         } else {
@@ -192,6 +196,11 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         });
 
         getPlugin().getLogger().info("[CountUpEvent] Live — " + durSec + "s.");
+    }
+
+    @Override
+    public void markStoppedByAdmin() {
+        stoppedByAdmin = true;
     }
 
     // -----------------------------------------------------------------------

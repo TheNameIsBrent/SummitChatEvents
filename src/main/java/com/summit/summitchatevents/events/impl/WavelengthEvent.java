@@ -192,9 +192,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             broadcast(wcfg.getMsgAnnounce());
             broadcast(wcfg.getMsgBannerBottom());
         });
-        schedule(T_RULES,      () -> broadcast(wcfg.getMsgRules()));
-        schedule(T_HERE_WE_GO, () -> broadcast(wcfg.getMsgHereWeGo()));
-        schedule(T_START,      () -> startRound(null));
+        schedule(T_RULES,  () -> broadcast(wcfg.getMsgRules()));
+        schedule(T_START,  () -> startRound(null));
     }
 
     // -----------------------------------------------------------------------
@@ -223,15 +222,32 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         final String promptMsg = WavelengthConfig.format(wcfg.getMsgPrompt(),
                 -1, null, -1, -1, null, null, currentPrompt);
 
+        // T_HERE_WE_GO_ROUND: pause between prompt reveal and "Here we go!" before opening
+        final long T_HERE_WE_GO_ROUND = 30L; // 1.5 s
+        final String hereWeGoMsg = wcfg.getMsgHereWeGo();
+
         if (contextMessage != null) {
-            schedule(0L,                                                        () -> broadcast(contextMessage));
-            schedule(T_ROUND_CONTEXT,                                           () -> broadcast(scaleMsg));
-            schedule(T_ROUND_CONTEXT + T_SCALE_TO_PROMPT,                       () -> broadcast(promptMsg));
-            schedule(T_ROUND_CONTEXT + T_SCALE_TO_PROMPT + T_PROMPT_TO_OPEN,    () -> openRound(wcfg));
+            // context → scale → prompt → here-we-go → open
+            final long s0 = 0L;
+            final long s1 = s0 + T_ROUND_CONTEXT;
+            final long s2 = s1 + T_SCALE_TO_PROMPT;
+            final long s3 = s2 + T_HERE_WE_GO_ROUND;
+            final long s4 = s3 + T_HERE_WE_GO_ROUND;
+            schedule(s0, () -> broadcast(contextMessage));
+            schedule(s1, () -> broadcast(scaleMsg));
+            schedule(s2, () -> broadcast(promptMsg));
+            schedule(s3, () -> broadcast(hereWeGoMsg));
+            schedule(s4, () -> openRound(wcfg));
         } else {
-            schedule(0L,                                 () -> broadcast(scaleMsg));
-            schedule(T_SCALE_TO_PROMPT,                  () -> broadcast(promptMsg));
-            schedule(T_SCALE_TO_PROMPT + T_PROMPT_TO_OPEN, () -> openRound(wcfg));
+            // scale → prompt → here-we-go → open
+            final long s0 = 0L;
+            final long s1 = s0 + T_SCALE_TO_PROMPT;
+            final long s2 = s1 + T_HERE_WE_GO_ROUND;
+            final long s3 = s2 + T_HERE_WE_GO_ROUND;
+            schedule(s0, () -> broadcast(scaleMsg));
+            schedule(s1, () -> broadcast(promptMsg));
+            schedule(s2, () -> broadcast(hereWeGoMsg));
+            schedule(s3, () -> openRound(wcfg));
         }
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
@@ -341,23 +357,25 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                     : WavelengthConfig.format(wcfg.getMsgRound2Start(),
                             -1, null, -1, -1, null, null, null, null, playerList);
 
-            // Private DMs — snapshot activePlayers to avoid sync issues
+            // Snapshot before scheduling — collections must not be read on another thread
             final Set<UUID> tiedSet   = new HashSet<>(tied);
             final Set<UUID> allActive;
             synchronized (this) { allActive = new HashSet<>(activePlayers); }
 
-            for (final UUID uuid : allActive) {
-                final Player p = Bukkit.getPlayer(uuid);
-                if (p == null) continue;
-                p.sendMessage(tiedSet.contains(uuid)
-                        ? wcfg.getMsgTieAdvanced()
-                        : wcfg.getMsgTieEliminated());
-            }
-
-            synchronized (this) {
-                activePlayers.clear();
-                activePlayers.addAll(tied);
-            }
+            // Send private DMs and start next round AFTER the tie result message is visible
+            schedule(baseDelay, () -> {
+                for (final UUID uuid : allActive) {
+                    final Player p = Bukkit.getPlayer(uuid);
+                    if (p == null) continue;
+                    p.sendMessage(tiedSet.contains(uuid)
+                            ? wcfg.getMsgTieAdvanced()
+                            : wcfg.getMsgTieEliminated());
+                }
+                synchronized (this) {
+                    activePlayers.clear();
+                    activePlayers.addAll(tiedSet);
+                }
+            });
 
             schedule(baseDelay + T_BETWEEN_ROUNDS, () -> startRound(nextCtx));
 
