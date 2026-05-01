@@ -25,3 +25,6 @@ permissions:
   summitevents.overridechat:
     description: Bypasses the chat block during an active event; can still play.
     default: op
+  summitevents.reload:
+    description: Allows reloading the plugin configuration via /summitevent reload.
+    default: op

@@ -14,28 +14,15 @@ import java.util.Set;
 /**
  * Central manager responsible for registering and controlling {@link ChatEvent} instances.
  *
- * <h3>Responsibilities</h3>
- * <ul>
- *   <li>Maintains a registry mapping event keys (e.g. {@code "count"}) to event instances.</li>
- *   <li>Ensures only one event can be active at a time.</li>
- *   <li>Provides {@link #startEvent(String)} and {@link #stopCurrentEvent()} as the
- *       single source of truth for event lifecycle.</li>
- * </ul>
- *
  * <p>All public methods must be called from the main server thread.
  */
 public final class EventManager {
 
-    // -----------------------------------------------------------------------
-    // Fields
-    // -----------------------------------------------------------------------
-
     private final SummitChatEventsPlugin plugin;
 
-    /** Ordered map of registered event key -> event instance. */
+    /** Ordered registry: event key -> event instance. */
     private final Map<String, ChatEvent> registry = new LinkedHashMap<>();
 
-    /** The currently active event, or {@code null} if none is running. */
     @Nullable
     private ChatEvent activeEvent;
 
@@ -48,30 +35,21 @@ public final class EventManager {
     }
 
     // -----------------------------------------------------------------------
-    // Lifecycle (called by SummitChatEventsPlugin)
+    // Lifecycle
     // -----------------------------------------------------------------------
 
-    /**
-     * Registers all built-in events and prepares internal state.
-     * Called once during {@code onEnable()}.
-     */
     public void init() {
         activeEvent = null;
         registerBuiltInEvents();
         plugin.getLogger().info("EventManager initialised with "
-                + registry.size() + " registered event(s): " + registry.keySet());
+                + registry.size() + " event(s): " + registry.keySet());
     }
 
-    /**
-     * Stops any running event and clears state.
-     * Called once during {@code onDisable()}.
-     */
     public void shutdown() {
         if (activeEvent != null) {
-            plugin.getLogger().warning(
-                "Plugin disabled while '" + activeEvent.getDisplayName() + "' was still running. Forcing stop."
-            );
-            activeEvent.stop();
+            plugin.getLogger().warning("Shutting down while '"
+                    + activeEvent.getDisplayName() + "' was running. Forcing stop.");
+            safeStop(activeEvent);
             activeEvent = null;
         }
         registry.clear();
@@ -79,118 +57,96 @@ public final class EventManager {
     }
 
     // -----------------------------------------------------------------------
-    // Event registration
+    // Registration
     // -----------------------------------------------------------------------
 
-    /**
-     * Registers all built-in events. Add new events here as the plugin grows.
-     */
     private void registerBuiltInEvents() {
         register("count", new CountUpEvent(plugin));
     }
 
-    /**
-     * Registers a named event in the registry.
-     *
-     * @param key   the lowercase lookup key players type (e.g. {@code "count"})
-     * @param event the event instance to associate with that key
-     * @throws IllegalArgumentException if the key is blank or already registered
-     */
     public void register(final @NotNull String key, final @NotNull ChatEvent event) {
-        final String normalised = key.toLowerCase().trim();
-        if (normalised.isEmpty()) {
-            throw new IllegalArgumentException("Event key must not be blank.");
-        }
-        if (registry.containsKey(normalised)) {
-            throw new IllegalArgumentException("An event is already registered under key: " + normalised);
-        }
-        registry.put(normalised, event);
+        final String k = normalise(key);
+        if (k.isEmpty()) throw new IllegalArgumentException("Event key must not be blank.");
+        if (registry.containsKey(k)) throw new IllegalArgumentException("Key already registered: " + k);
+        registry.put(k, event);
     }
 
     // -----------------------------------------------------------------------
-    // Public API
+    // Result type
+    // -----------------------------------------------------------------------
+
+    public enum StartResult { SUCCESS, ALREADY_RUNNING, NOT_FOUND }
+
+    // -----------------------------------------------------------------------
+    // Control API
     // -----------------------------------------------------------------------
 
     /**
-     * Result type returned by {@link #startEvent(String)} to give the caller
-     * enough context to form a player-facing message without coupling the
-     * manager to chat formatting.
-     */
-    public enum StartResult {
-        /** The event was started successfully. */
-        SUCCESS,
-        /** Another event is already running. */
-        ALREADY_RUNNING,
-        /** No event is registered under the given name. */
-        NOT_FOUND
-    }
-
-    /**
-     * Attempts to start the event registered under {@code key}.
+     * Starts the event registered under {@code key}.
      *
-     * @param key the event key (case-insensitive)
-     * @return a {@link StartResult} describing the outcome
+     * <p>The race condition is avoided by setting {@code activeEvent} only
+     * <em>after</em> {@link ChatEvent#start()} returns successfully.
+     * If {@code start()} throws, {@code activeEvent} remains {@code null}.
      */
     public @NotNull StartResult startEvent(final @NotNull String key) {
-        if (key.isBlank()) {
-            throw new IllegalArgumentException("Event key must not be blank.");
-        }
+        if (key.isBlank()) throw new IllegalArgumentException("Event key must not be blank.");
+        if (activeEvent != null) return StartResult.ALREADY_RUNNING;
 
-        if (activeEvent != null) {
-            return StartResult.ALREADY_RUNNING;
-        }
+        final ChatEvent event = registry.get(normalise(key));
+        if (event == null) return StartResult.NOT_FOUND;
 
-        final ChatEvent event = registry.get(key.toLowerCase().trim());
-        if (event == null) {
-            return StartResult.NOT_FOUND;
-        }
-
-        activeEvent = event;
-        activeEvent.start();
+        // Start first — set active only on success
+        event.start();
+        activeEvent = event;   // only reached if start() did not throw
         return StartResult.SUCCESS;
     }
 
     /**
      * Stops the currently active event, if any.
      *
-     * @return {@code true} if an event was stopped, {@code false} if nothing was running
+     * @return {@code true} if an event was stopped
      */
     public boolean stopCurrentEvent() {
-        if (activeEvent == null) {
-            return false;
-        }
-        activeEvent.stop();
-        activeEvent = null;
+        if (activeEvent == null) return false;
+        final ChatEvent toStop = activeEvent;
+        activeEvent = null;          // clear first so isEventRunning() returns false
+        safeStop(toStop);            // during stop, event cannot re-start itself
         return true;
     }
 
-    /**
-     * @return {@code true} if an event is currently active
-     */
-    public boolean isEventRunning() {
-        return activeEvent != null;
-    }
+    // -----------------------------------------------------------------------
+    // Accessors
+    // -----------------------------------------------------------------------
 
-    /**
-     * @return the active {@link ChatEvent}, or {@code null} if none is running
-     */
+    public boolean isEventRunning() { return activeEvent != null; }
+
     @Nullable
-    public ChatEvent getActiveEvent() {
-        return activeEvent;
-    }
+    public ChatEvent getActiveEvent() { return activeEvent; }
 
-    /**
-     * @return the display name of the active event, or {@code null} if none is running
-     */
     @Nullable
     public String getActiveEventName() {
         return activeEvent == null ? null : activeEvent.getDisplayName();
     }
 
-    /**
-     * @return an unmodifiable view of all registered event keys
-     */
     public @NotNull Set<String> getRegisteredEventKeys() {
         return Collections.unmodifiableSet(registry.keySet());
+    }
+
+    // -----------------------------------------------------------------------
+    // Private helpers
+    // -----------------------------------------------------------------------
+
+    private static String normalise(final String key) {
+        return key == null ? "" : key.toLowerCase().trim();
+    }
+
+    /** Calls {@code stop()} and swallows any exception so shutdown always completes. */
+    private void safeStop(final ChatEvent event) {
+        try {
+            event.stop();
+        } catch (final Exception e) {
+            plugin.getLogger().severe("Exception while stopping event '"
+                    + event.getDisplayName() + "': " + e.getMessage());
+        }
     }
 }

@@ -11,18 +11,10 @@ import org.bukkit.plugin.java.JavaPlugin;
  */
 public final class SummitChatEventsPlugin extends JavaPlugin {
 
-    // -----------------------------------------------------------------------
-    // Singleton
-    // -----------------------------------------------------------------------
     private static SummitChatEventsPlugin instance;
 
-    public static SummitChatEventsPlugin getInstance() {
-        return instance;
-    }
+    public static SummitChatEventsPlugin getInstance() { return instance; }
 
-    // -----------------------------------------------------------------------
-    // Subsystems
-    // -----------------------------------------------------------------------
     private PluginConfig pluginConfig;
     private EventManager eventManager;
 
@@ -35,68 +27,46 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
         instance = this;
 
         getLogger().info("╔══════════════════════════════════╗");
-        getLogger().info("║   SummitChatEvents  v" + getDescription().getVersion() + "        ║");
-        getLogger().info("║   Enabling plugin...              ║");
+        getLogger().info("║  SummitChatEvents  v" + getDescription().getVersion() + "         ║");
         getLogger().info("╚══════════════════════════════════╝");
 
-        loadPluginConfig();
-        initManagers();
-        registerCommands();
-        registerListeners();
-
-        getLogger().info("SummitChatEvents enabled successfully.");
-    }
-
-    @Override
-    public void onDisable() {
-        if (eventManager != null) {
-            eventManager.shutdown();
-        }
-        getLogger().info("SummitChatEvents has been disabled. Goodbye!");
-        instance = null;
-    }
-
-    // -----------------------------------------------------------------------
-    // Private helpers
-    // -----------------------------------------------------------------------
-
-    private void loadPluginConfig() {
         saveDefaultConfig();
-        reloadConfig();
-        pluginConfig = new PluginConfig(this);
-        getLogger().info("Configuration loaded.");
-    }
+        refreshPluginConfig();
 
-    private void initManagers() {
         eventManager = new EventManager(this);
         eventManager.init();
-        getLogger().info("Managers initialised.");
-    }
 
-    private void registerCommands() {
         final SummitEventCommand cmd = new SummitEventCommand(this);
         //noinspection DataFlowIssue
         getCommand("summitevent").setExecutor(cmd);
         getCommand("summitevent").setTabCompleter(cmd);
-        getLogger().info("Commands registered.");
+
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+
+        getLogger().info("SummitChatEvents enabled.");
     }
 
-    private void registerListeners() {
-        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
-        getLogger().info("Listeners registered.");
+    @Override
+    public void onDisable() {
+        if (eventManager != null) eventManager.shutdown();
+        getLogger().info("SummitChatEvents disabled.");
+        instance = null;
     }
 
     // -----------------------------------------------------------------------
     // Public API
     // -----------------------------------------------------------------------
 
-    /** @return the parsed plugin configuration (never null after onEnable) */
-    public PluginConfig getPluginConfig() {
-        return pluginConfig;
+    /**
+     * Re-reads the YAML config and rebuilds the typed {@link PluginConfig}.
+     * Safe to call at any time from the main thread (e.g. on /summitevent reload).
+     */
+    public void refreshPluginConfig() {
+        reloadConfig();
+        pluginConfig = new PluginConfig(this);
+        getLogger().info("Configuration loaded.");
     }
 
-    /** @return the active EventManager (never null after onEnable) */
-    public EventManager getEventManager() {
-        return eventManager;
-    }
+    public PluginConfig getPluginConfig() { return pluginConfig; }
+    public EventManager getEventManager() { return eventManager; }
 }

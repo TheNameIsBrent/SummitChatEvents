@@ -13,17 +13,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Handles the {@code /summitevent} command and all of its sub-commands.
+ * Handles {@code /summitevent} and all sub-commands.
  *
- * <p>Sub-commands:
+ * <h3>Sub-commands</h3>
  * <ul>
- *   <li>{@code start <event-name>} — starts a registered event (requires {@code summitevents.start})</li>
+ *   <li>{@code start <event>} — starts a registered event (perm: {@code summitevents.start})</li>
+ *   <li>{@code reload}        — reloads config (perm: {@code summitevents.reload})</li>
  * </ul>
- *
- * <p>Registered in {@link SummitChatEventsPlugin} via:
- * <pre>{@code
- *   getCommand("summitevent").setExecutor(new SummitEventCommand(this));
- * }</pre>
  */
 public final class SummitEventCommand implements CommandExecutor, TabCompleter {
 
@@ -32,10 +28,16 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
     // -----------------------------------------------------------------------
 
     private static final String SUB_START  = "start";
-    private static final String PERM_START = "summitevents.start";
-    private static final String SUCCESS    = "\u00a7a[SummitEvents] \u00a7r";
-    private static final String ERROR      = "\u00a7c[SummitEvents] \u00a7r";
-    private static final String INFO       = "\u00a7e[SummitEvents] \u00a7r";
+    private static final String SUB_RELOAD = "reload";
+
+    private static final String PERM_START  = "summitevents.start";
+    private static final String PERM_RELOAD = "summitevents.reload";
+
+    // Colour shortcuts (§-coded legacy strings — safe in command feedback)
+    private static final String C_OK   = "\u00a7a";  // green
+    private static final String C_ERR  = "\u00a7c";  // red
+    private static final String C_INFO = "\u00a7e";  // yellow
+    private static final String C_RST  = "\u00a7r";  // reset
 
     // -----------------------------------------------------------------------
     // Fields
@@ -68,13 +70,13 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
         }
 
         switch (args[0].toLowerCase()) {
-            case SUB_START -> handleStart(sender, args, label);
-            default        -> {
-                sender.sendMessage(ERROR + "Unknown sub-command.");
+            case SUB_START  -> handleStart(sender, args, label);
+            case SUB_RELOAD -> handleReload(sender);
+            default         -> {
+                msg(sender, C_ERR + "Unknown sub-command.");
                 sendUsage(sender, label);
             }
         }
-
         return true;
     }
 
@@ -90,23 +92,17 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
             final @NotNull String[] args
     ) {
         if (args.length == 1) {
-            if (sender.hasPermission(PERM_START)) {
-                return List.of(SUB_START);
-            }
-            return List.of();
+            final List<String> subs = new ArrayList<>();
+            if (sender.hasPermission(PERM_START))  subs.add(SUB_START);
+            if (sender.hasPermission(PERM_RELOAD)) subs.add(SUB_RELOAD);
+            return filterPrefix(subs, args[0]);
         }
 
-        // Tab-complete event names for "/summitevent start <tab>"
         if (args.length == 2 && SUB_START.equalsIgnoreCase(args[0])
                 && sender.hasPermission(PERM_START)) {
-            final String partial = args[1].toLowerCase();
-            final List<String> matches = new ArrayList<>();
-            for (final String key : plugin.getEventManager().getRegisteredEventKeys()) {
-                if (key.startsWith(partial)) {
-                    matches.add(key);
-                }
-            }
-            return matches;
+            return filterPrefix(
+                    new ArrayList<>(plugin.getEventManager().getRegisteredEventKeys()),
+                    args[1]);
         }
 
         return List.of();
@@ -116,51 +112,49 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
     // Sub-command handlers
     // -----------------------------------------------------------------------
 
-    /**
-     * Handles {@code /summitevent start <event-key>}.
-     */
     private void handleStart(
             final CommandSender sender,
             final String[] args,
             final String label
     ) {
         if (!sender.hasPermission(PERM_START)) {
-            sender.sendMessage(ERROR + "You do not have permission to start events.");
+            msg(sender, C_ERR + "You do not have permission to start events.");
             return;
         }
 
-        if (args.length < 2) {
-            sender.sendMessage(INFO + "Usage: /" + label + " start <event-name>");
-            sender.sendMessage(INFO + "Available events: "
-                    + plugin.getEventManager().getRegisteredEventKeys());
+        if (args.length < 2 || args[1].isBlank()) {
+            msg(sender, C_INFO + "Usage: /" + label + " start <event-name>");
+            msg(sender, C_INFO + "Available: " + plugin.getEventManager().getRegisteredEventKeys());
             return;
         }
 
         final String key = args[1].trim();
-        if (key.isEmpty()) {
-            sender.sendMessage(ERROR + "Event name cannot be empty.");
-            return;
-        }
-
         final EventManager.StartResult result = plugin.getEventManager().startEvent(key);
 
         switch (result) {
-            case SUCCESS ->
-                sender.sendMessage(SUCCESS + "Event \u00a7e" + key + "\u00a7a has been started!");
+            case SUCCESS -> {
+                msg(sender, C_OK + "Started event " + C_INFO + key + C_OK + ".");
+                plugin.getLogger().info(sender.getName() + " started event: " + key);
+            }
+            case ALREADY_RUNNING -> msg(sender, C_ERR + "An event is already running: "
+                    + C_INFO + plugin.getEventManager().getActiveEventName()
+                    + C_ERR + ". Stop it first.");
+            case NOT_FOUND -> msg(sender, C_ERR + "Unknown event: " + C_INFO + key
+                    + C_ERR + ". Available: "
+                    + plugin.getEventManager().getRegisteredEventKeys());
+        }
+    }
 
-            case ALREADY_RUNNING ->
-                sender.sendMessage(ERROR + "An event is already running: \u00a7e"
-                        + plugin.getEventManager().getActiveEventName()
-                        + "\u00a7c. Stop it before starting a new one.");
-
-            case NOT_FOUND ->
-                sender.sendMessage(ERROR + "Unknown event: \u00a7e" + key
-                        + "\u00a7c. Available: " + plugin.getEventManager().getRegisteredEventKeys());
+    private void handleReload(final CommandSender sender) {
+        if (!sender.hasPermission(PERM_RELOAD)) {
+            msg(sender, C_ERR + "You do not have permission to reload the config.");
+            return;
         }
 
-        if (result == EventManager.StartResult.SUCCESS) {
-            plugin.getLogger().info(sender.getName() + " started event: " + key);
-        }
+        plugin.reloadConfig();
+        plugin.refreshPluginConfig();
+        msg(sender, C_OK + "Configuration reloaded.");
+        plugin.getLogger().info(sender.getName() + " reloaded the config.");
     }
 
     // -----------------------------------------------------------------------
@@ -168,7 +162,25 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
     // -----------------------------------------------------------------------
 
     private void sendUsage(final CommandSender sender, final String label) {
-        sender.sendMessage(INFO + "\u00a7lSummitEvents Commands:");
-        sender.sendMessage(INFO + "  /" + label + " start <event-name> \u00a77\u2014 Start a registered event");
+        msg(sender, C_INFO + "\u00a7lSummitEvents commands:");
+        msg(sender, C_INFO + "  /" + label + " start <event>" + C_RST + " \u00a77\u2014 Start an event");
+        msg(sender, C_INFO + "  /" + label + " reload"        + C_RST + " \u00a77\u2014 Reload config");
+    }
+
+    private static void msg(final CommandSender sender, final String text) {
+        sender.sendMessage(text);
+    }
+
+    /**
+     * Returns entries from {@code list} that start with {@code partial} (case-insensitive).
+     */
+    private static List<String> filterPrefix(final List<String> list, final String partial) {
+        if (partial.isEmpty()) return list;
+        final String lower = partial.toLowerCase();
+        final List<String> out = new ArrayList<>();
+        for (final String s : list) {
+            if (s.toLowerCase().startsWith(lower)) out.add(s);
+        }
+        return out;
     }
 }

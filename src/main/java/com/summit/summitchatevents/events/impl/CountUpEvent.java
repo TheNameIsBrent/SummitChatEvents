@@ -3,6 +3,7 @@ package com.summit.summitchatevents.events.impl;
 import com.summit.summitchatevents.SummitChatEventsPlugin;
 import com.summit.summitchatevents.config.PluginConfig;
 import com.summit.summitchatevents.events.ChatEvent;
+import com.summit.summitchatevents.listeners.ChatListener;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -14,6 +15,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,21 +29,23 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Chat event where players collectively count upward: 1, 2, 3 …
  *
- * <h3>Flow</h3>
- * <ol>
- *   <li>Dramatic intro sequence (announcement → rules → "here we go" → styled 1).</li>
- *   <li>Chat handler accepts only the correct next integer.</li>
- *   <li>A player cannot send two numbers in a row.</li>
- *   <li>Players with {@value #PERM_OVERRIDE} bypass the chat block and can play.</li>
- *   <li>Players without {@value #PERM_PLAY} (and without override) are fully blocked.</li>
- *   <li>Correct numbers are sent in a true-colour hex + bold via Adventure API.</li>
- *   <li>All players hear XP-orb sound on each correct number.</li>
- *   <li>Random 30–90 s timer; winner gets reward command + broadcast.</li>
- * </ol>
+ * <h3>Permissions</h3>
+ * <ul>
+ *   <li>{@value #PERM_PLAY} — default {@code true}; required to submit numbers.</li>
+ *   <li>{@value #PERM_OVERRIDE} — default {@code op}; chat bypass + can play.</li>
+ * </ul>
+ *
+ * <h3>Chat pipeline</h3>
+ * {@link ChatListener#onChatLowest} cancels everything first.
+ * This handler runs at LOWEST (same priority, registered after ChatListener
+ * so it fires second) and either leaves the message cancelled or sets the
+ * {@link ChatListener#APPROVED_KEY} metadata so the HIGHEST guard lets it through.
+ * Approved messages are fully cancelled too — we send via Adventure per-player
+ * to display the number with the player's name and true hex colour.
  *
  * <h3>Thread safety</h3>
- * {@link AsyncPlayerChatEvent} fires async. All shared state uses atomics.
- * Main-thread Bukkit calls go through {@code runTask()}.
+ * {@link AsyncPlayerChatEvent} fires async. All shared mutable state uses
+ * atomics or volatile. Main-thread Bukkit calls go through {@code runTask()}.
  */
 public final class CountUpEvent extends ChatEvent implements Listener {
 
@@ -61,34 +65,34 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     private static final float SOUND_PITCH   = 1.0f;
 
     // -----------------------------------------------------------------------
-    // Colour — minimum component value keeps colours bright on dark BG
+    // Colour — floor keeps numbers readable on dark backgrounds
     // -----------------------------------------------------------------------
 
-    private static final int COLOR_MIN = 120;
-    private static final int COLOR_RANGE = 255 - COLOR_MIN + 1;
+    private static final int COLOR_FLOOR = 120;
+    private static final int COLOR_RANGE = 256 - COLOR_FLOOR;
 
     // -----------------------------------------------------------------------
-    // Intro timing (ticks: 20t = 1s)
+    // Intro timing (ticks; 20 = 1 s)
     // -----------------------------------------------------------------------
 
-    private static final long DELAY_ANNOUNCEMENT_TO_RULES = 60L;  // 3 s
-    private static final long DELAY_RULES_TO_HERE_WE_GO   = 60L;  // 3 s
-    private static final long DELAY_HERE_WE_GO_TO_ONE     = 40L;  // 2 s
+    private static final long T_RULES      = 60L;   // 3 s after announce
+    private static final long T_HERE_WE_GO = 120L;  // 3 s after rules
+    private static final long T_GO_LIVE    = 160L;  // 2 s after here-we-go
 
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
 
-    /** Next number expected. Server broadcasts 1; players type from 2. */
+    /** Next number a player must type. 0 = not live yet. */
     private final AtomicInteger currentNumber = new AtomicInteger(0);
 
     private final AtomicReference<UUID>   lastPlayerUuid = new AtomicReference<>(null);
     private final AtomicReference<String> lastPlayerName = new AtomicReference<>(null);
 
-    /** All pending scheduler tasks — cancelled as a group on stop. */
+    /** All pending scheduler tasks tracked for clean cancellation. */
     private final List<BukkitTask> tasks = new ArrayList<>();
 
-    /** Set to true once the intro finishes and the game is actually live. */
+    /** True once the intro finishes and the counting game is live. */
     private volatile boolean live = false;
 
     private final Random random = new Random();
@@ -107,14 +111,13 @@ public final class CountUpEvent extends ChatEvent implements Listener {
 
     @Override
     protected void onStart() {
-        // Reset
+        live = false;
         currentNumber.set(0);
         lastPlayerUuid.set(null);
         lastPlayerName.set(null);
-        live = false;
         tasks.clear();
 
-        // Register listener immediately so chat is suppressed during the intro
+        // Register listener before intro so chat is suppressed immediately
         Bukkit.getPluginManager().registerEvents(this, getPlugin());
 
         scheduleIntro();
@@ -124,29 +127,25 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     protected void onStop() {
         live = false;
 
-        // Cancel every pending task (intro steps + game timer)
-        for (final BukkitTask t : tasks) {
-            t.cancel();
-        }
+        tasks.forEach(BukkitTask::cancel);
         tasks.clear();
 
         HandlerList.unregisterAll(this);
 
-        final PluginConfig cfg     = getPlugin().getPluginConfig();
-        final String       prefix  = cfg.getPrefix();
-        final int          reached = Math.max(currentNumber.get() - 1, 0);
-        final String       winner  = lastPlayerName.get();
+        final PluginConfig cfg    = getPlugin().getPluginConfig();
+        final int          count  = Math.max(currentNumber.get() - 1, 0);
+        final String       winner = lastPlayerName.get();
 
         if (winner != null) {
-            Bukkit.broadcastMessage(prefix + PluginConfig.format(cfg.getCountMsgWinner(), winner, reached));
+            broadcast(cfg.getPrefix() + PluginConfig.format(cfg.getCountMsgWinner(), winner, count));
             runRewardCommand(cfg, winner);
         } else {
-            Bukkit.broadcastMessage(prefix + cfg.getCountMsgNoWinner());
+            broadcast(cfg.getPrefix() + cfg.getCountMsgNoWinner());
         }
 
         getPlugin().getLogger().info(String.format(
                 "[CountUpEvent] Stopped. Highest: %d. Winner: %s",
-                reached, winner != null ? winner : "none"));
+                count, winner != null ? winner : "none"));
 
         currentNumber.set(0);
         lastPlayerUuid.set(null);
@@ -154,44 +153,29 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     }
 
     // -----------------------------------------------------------------------
-    // Intro sequence — all scheduled on main thread
+    // Intro sequence
     // -----------------------------------------------------------------------
 
     private void scheduleIntro() {
         final PluginConfig cfg    = getPlugin().getPluginConfig();
         final String       prefix = cfg.getPrefix();
 
-        // Step 1 — announcement (immediately)
-        broadcast(prefix + cfg.getCountMsgAnnounce());
-
-        // Step 2 — rules
-        schedule(DELAY_ANNOUNCEMENT_TO_RULES,
-                () -> broadcast(prefix + cfg.getCountMsgRules()));
-
-        // Step 3 — here we go
-        schedule(DELAY_ANNOUNCEMENT_TO_RULES + DELAY_RULES_TO_HERE_WE_GO,
-                () -> broadcast(prefix + cfg.getCountMsgHereWeGo()));
-
-        // Step 4 — the "1" and game goes live
-        schedule(DELAY_ANNOUNCEMENT_TO_RULES + DELAY_RULES_TO_HERE_WE_GO + DELAY_HERE_WE_GO_TO_ONE,
-                this::goLive);
+        schedule(0L,        () -> broadcast(prefix + cfg.getCountMsgAnnounce()));
+        schedule(T_RULES,   () -> broadcast(prefix + cfg.getCountMsgRules()));
+        schedule(T_HERE_WE_GO, () -> broadcast(prefix + cfg.getCountMsgHereWeGo()));
+        schedule(T_GO_LIVE, this::goLive);
     }
 
-    /**
-     * Called when the intro finishes — broadcasts "1" and starts the game timer.
-     */
     private void goLive() {
-        currentNumber.set(2);   // server sent 1; players must type 2 next
+        currentNumber.set(2);  // server broadcasts 1; players type from 2
         live = true;
 
-        // Broadcast "1" via Adventure so each player sees the true-colour bold number
-        broadcastStyledNumber(1);
+        broadcastStyledNumber(null, 1);  // null sender = server
 
-        // Schedule game timer
-        final PluginConfig cfg = getPlugin().getPluginConfig();
-        final int minSec = cfg.getCountMinDuration();
-        final int maxSec = cfg.getCountMaxDuration();
-        final int durSec = minSec + random.nextInt(Math.max(maxSec - minSec + 1, 1));
+        final PluginConfig cfg    = getPlugin().getPluginConfig();
+        final int          minSec = cfg.getCountMinDuration();
+        final int          maxSec = cfg.getCountMaxDuration();
+        final int          durSec = minSec + random.nextInt(Math.max(maxSec - minSec + 1, 1));
 
         schedule((long) durSec * 20L, () -> {
             getPlugin().getLogger().info("[CountUpEvent] Timer expired.");
@@ -212,32 +196,28 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         final boolean canPlay     = hasOverride || player.hasPermission(PERM_PLAY);
         final String  raw         = event.getMessage().trim();
 
-        // ── Players with override permission ────────────────────────────────
-        // Their non-number chat passes through freely.
-        // Their number submissions go to game logic (cancellation handled there).
+        // Override players: non-number messages pass through freely.
+        // Set the approval flag so ChatListener.HIGHEST lets them through.
         if (hasOverride && !isPositiveInteger(raw)) {
-            return; // Normal chat for override players — leave untouched
+            approveMessage(player);
+            event.setCancelled(false);
+            return;
         }
 
-        // ── Everyone without override: suppress everything by default ────────
-        if (!hasOverride) {
-            event.setCancelled(true);
-        }
-
-        // Players with no play permission at all are done here
+        // Everyone without override is already cancelled by ChatListener.LOWEST.
+        // Players with no play permission can't participate.
         if (!canPlay) {
             return;
         }
 
-        // ── Game not yet live (intro in progress) ────────────────────────────
+        // Game not yet live — keep cancelled
         if (!live) {
-            // Keep cancelled; nothing to do
             return;
         }
 
-        // ── Not a number ─────────────────────────────────────────────────────
+        // Non-numeric message from a play-permission player — silently block
         if (!isPositiveInteger(raw)) {
-            return; // Already cancelled above for non-override; override returns at top
+            return;
         }
 
         final int sent;
@@ -247,36 +227,34 @@ public final class CountUpEvent extends ChatEvent implements Listener {
             return;
         }
 
-        // ── Wrong number ─────────────────────────────────────────────────────
+        // Wrong number
         final int expected = currentNumber.get();
         if (sent != expected) {
-            event.setCancelled(true);
             return;
         }
 
-        // ── Consecutive send guard ───────────────────────────────────────────
+        // Consecutive send guard
         if (player.getUniqueId().equals(lastPlayerUuid.get())) {
-            event.setCancelled(true);
             return;
         }
 
-        // ── Race-safe claim ──────────────────────────────────────────────────
+        // Race-safe claim
         if (!currentNumber.compareAndSet(expected, expected + 1)) {
-            event.setCancelled(true);
             return;
         }
 
-        // ── Accepted ─────────────────────────────────────────────────────────
+        // --- Accepted ---
         lastPlayerUuid.set(player.getUniqueId());
         lastPlayerName.set(player.getName());
 
-        // Cancel the legacy chat event — we broadcast via Adventure per-player
-        // to get true hex colour support without the unicode-escape warning.
-        event.setCancelled(true);
+        // Keep the event cancelled — we send the styled message manually below
+        // so we control the exact format (player name + coloured number).
+        // No need to set the approval flag; we handle the broadcast ourselves.
 
-        final int acceptedNumber = sent;
+        final int acceptedNum = sent;
+        final String senderName = player.getName();
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
-            broadcastStyledNumber(acceptedNumber);
+            broadcastStyledNumber(senderName, acceptedNum);
             playSoundForAll();
         });
     }
@@ -286,21 +264,37 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     /**
-     * Sends each online player the styled number as an Adventure component.
-     * Adventure on Paper renders true hex colours without legacy § escapes,
-     * eliminating the unicode warning that appeared when using setFormat().
+     * Broadcasts a bold, random-hex-coloured number to all online players
+     * via the Adventure API (no legacy § escapes, no unicode warnings).
+     *
+     * <p>Format: {@code PlayerName » 42} where the number is coloured and bold,
+     * and the player name is white. When {@code senderName} is null the server
+     * sent the number (opening "1") and no name prefix is shown.
+     *
+     * @param senderName player who typed the number, or {@code null} for server
+     * @param number     the number to display
      */
-    private void broadcastStyledNumber(final int number) {
-        final int r = COLOR_MIN + random.nextInt(COLOR_RANGE);
-        final int g = COLOR_MIN + random.nextInt(COLOR_RANGE);
-        final int b = COLOR_MIN + random.nextInt(COLOR_RANGE);
+    private void broadcastStyledNumber(@Nullable final String senderName, final int number) {
+        final int r = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
+        final int g = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
+        final int b = COLOR_FLOOR + random.nextInt(COLOR_RANGE);
+        final TextColor colour = TextColor.color(r, g, b);
 
-        final Component component = Component.text(String.valueOf(number))
-                .color(TextColor.color(r, g, b))
+        final Component numComponent = Component.text(String.valueOf(number))
+                .color(colour)
                 .decorate(TextDecoration.BOLD);
 
+        final Component line;
+        if (senderName != null) {
+            line = Component.text(senderName + " \u00bb ")   // "PlayerName » "
+                    .color(TextColor.color(0xFFFFFF))
+                    .append(numComponent);
+        } else {
+            line = numComponent;
+        }
+
         for (final Player p : Bukkit.getOnlinePlayers()) {
-            p.sendMessage(component);
+            p.sendMessage(line);
         }
     }
 
@@ -316,20 +310,27 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         final String resolved = cmd.replace("%player%", winnerName);
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), resolved);
-            final String rewardMsg = cfg.getPrefix() + cfg.getCountMsgReward()
-                    .replace("%player%", winnerName);
-            Bukkit.broadcastMessage(rewardMsg);
-            getPlugin().getLogger().info("[CountUpEvent] Reward dispatched for " + winnerName + ": " + resolved);
+            broadcast(cfg.getPrefix()
+                    + cfg.getCountMsgReward().replace("%player%", winnerName));
+            getPlugin().getLogger().info(
+                    "[CountUpEvent] Reward dispatched for " + winnerName + ": " + resolved);
         });
+    }
+
+    /**
+     * Sets the approval metadata flag on {@code player} so
+     * {@link ChatListener#onChatHighest} knows this message was explicitly
+     * allowed (used for override-permission players' non-number chat).
+     */
+    private void approveMessage(final Player player) {
+        player.setMetadata(ChatListener.APPROVED_KEY,
+                new FixedMetadataValue(getPlugin(), true));
     }
 
     private void broadcast(final String message) {
         Bukkit.broadcastMessage(message);
     }
 
-    /**
-     * Schedules a one-shot task on the main thread and tracks it for cleanup.
-     */
     private void schedule(final long delayTicks, final Runnable task) {
         tasks.add(Bukkit.getScheduler().runTaskLater(getPlugin(), task, delayTicks));
     }
@@ -339,7 +340,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     private static boolean isPositiveInteger(final String s) {
-        if (s.isEmpty() || s.length() > 10) return false;
+        if (s == null || s.isEmpty() || s.length() > 10) return false;
         for (int i = 0; i < s.length(); i++) {
             if (!Character.isDigit(s.charAt(i))) return false;
         }
