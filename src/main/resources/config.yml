@@ -1,16 +1,40 @@
-# ─────────────────────────────────────────────
-#  SummitChatEvents — default configuration
-# ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════════
+#  SummitChatEvents — Configuration
+#  Color codes: use & for legacy codes (&a, &c, &e, &l …)
+#  Placeholders: %player% = winner name, %number% = last number reached
+# ══════════════════════════════════════════════════════
 
-# Set to false to suppress verbose plugin logging.
+# Prefix prepended to all plugin messages.
+prefix: "&6[&eCount Up&6]&r "
+
+# Set to true for verbose console output.
 debug: false
 
-# Future sections — uncomment and populate as features are added.
+events:
+  count:
+    # Duration range in seconds — a random value in this range is chosen each run.
+    min-duration: 30
+    max-duration: 90
 
-# chat:
-#   format: "<gray>[<aqua>%player_name%<gray>]</aqua> <white>%message%"
-#   cooldown-seconds: 2
+    # Console command executed when the event ends with a winner.
+    # Use %player% for the winner's name. Leave blank ("") to disable.
+    reward-command: "give %player% diamond 3"
 
-# filters:
-#   block-caps: true
-#   block-urls: false
+    messages:
+      # Step 1 — immediately on /summitevent start
+      announce:   "&e&lA Count Up event is about to begin! Get ready!"
+
+      # Step 2 — after 3 seconds
+      rules:      "&7How it works: &fType the next number in chat. Don't send two in a row. First correct number wins the round!"
+
+      # Step 3 — after another 3 seconds
+      here-we-go: "&a&lHere we go!"
+
+      # Shown when the event ends with no one scoring
+      no-winner:  "&cThe event ended &7— &cnobody scored!"
+
+      # Shown when the event ends with a winner (%player%, %number%)
+      winner:     "&aEvent over! &eWinner: &6&l%player% &awith the last number &e%number%&a. Well played!"
+
+      # Broadcast after the reward command runs (%player%)
+      reward:     "&6%player% &ehas been rewarded for winning the Count Up event!"

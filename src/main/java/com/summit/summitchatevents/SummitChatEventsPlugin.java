@@ -1,26 +1,18 @@
 package com.summit.summitchatevents;
 
 import com.summit.summitchatevents.commands.SummitEventCommand;
+import com.summit.summitchatevents.config.PluginConfig;
 import com.summit.summitchatevents.listeners.ChatListener;
 import com.summit.summitchatevents.managers.EventManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
  * Main entry point for the SummitChatEvents plugin.
- *
- * <p>Lifecycle:
- * <ol>
- *   <li>{@link #onEnable()} — called by the server when the plugin loads.</li>
- *   <li>{@link #onDisable()} — called by the server when the plugin unloads.</li>
- * </ol>
- *
- * <p>Future subsystems (event listeners, commands, config) should be
- * initialised inside {@code onEnable()} and cleaned up inside {@code onDisable()}.
  */
 public final class SummitChatEventsPlugin extends JavaPlugin {
 
     // -----------------------------------------------------------------------
-    // Singleton accessor (optional convenience; never leak to async threads)
+    // Singleton
     // -----------------------------------------------------------------------
     private static SummitChatEventsPlugin instance;
 
@@ -29,8 +21,9 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
     }
 
     // -----------------------------------------------------------------------
-    // Managers
+    // Subsystems
     // -----------------------------------------------------------------------
+    private PluginConfig pluginConfig;
     private EventManager eventManager;
 
     // -----------------------------------------------------------------------
@@ -41,17 +34,12 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
     public void onEnable() {
         instance = this;
 
-        // ── Banner ──────────────────────────────────────────────────────────
         getLogger().info("╔══════════════════════════════════╗");
         getLogger().info("║   SummitChatEvents  v" + getDescription().getVersion() + "        ║");
         getLogger().info("║   Enabling plugin...              ║");
         getLogger().info("╚══════════════════════════════════╝");
 
-        // ── Configuration ───────────────────────────────────────────────────
-        saveDefaultConfig();          // writes config.yml from jar if absent
-        reloadConfig();
-
-        // ── Subsystems ──────────────────────────────────────────────────────
+        loadPluginConfig();
         initManagers();
         registerCommands();
         registerListeners();
@@ -61,11 +49,9 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // ── Tear-down ───────────────────────────────────────────────────────
         if (eventManager != null) {
             eventManager.shutdown();
         }
-
         getLogger().info("SummitChatEvents has been disabled. Goodbye!");
         instance = null;
     }
@@ -74,32 +60,27 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
     // Private helpers
     // -----------------------------------------------------------------------
 
-    /**
-     * Initialise all manager singletons in dependency order.
-     * Add new managers here as the plugin grows.
-     */
+    private void loadPluginConfig() {
+        saveDefaultConfig();
+        reloadConfig();
+        pluginConfig = new PluginConfig(this);
+        getLogger().info("Configuration loaded.");
+    }
+
     private void initManagers() {
         eventManager = new EventManager(this);
         eventManager.init();
         getLogger().info("Managers initialised.");
     }
 
-    /**
-     * Register all commands defined in plugin.yml.
-     * Add new commands here as the plugin grows.
-     */
     private void registerCommands() {
-        final SummitEventCommand summitEventCommand = new SummitEventCommand(this);
-        //noinspection DataFlowIssue  — getCommand() is non-null when declared in plugin.yml
-        getCommand("summitevent").setExecutor(summitEventCommand);
-        getCommand("summitevent").setTabCompleter(summitEventCommand);
+        final SummitEventCommand cmd = new SummitEventCommand(this);
+        //noinspection DataFlowIssue
+        getCommand("summitevent").setExecutor(cmd);
+        getCommand("summitevent").setTabCompleter(cmd);
         getLogger().info("Commands registered.");
     }
 
-    /**
-     * Register all Bukkit event listeners.
-     * Add new listeners here as the plugin grows.
-     */
     private void registerListeners() {
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getLogger().info("Listeners registered.");
@@ -109,7 +90,12 @@ public final class SummitChatEventsPlugin extends JavaPlugin {
     // Public API
     // -----------------------------------------------------------------------
 
-    /** @return the active {@link EventManager}, or {@code null} if the plugin is disabled. */
+    /** @return the parsed plugin configuration (never null after onEnable) */
+    public PluginConfig getPluginConfig() {
+        return pluginConfig;
+    }
+
+    /** @return the active EventManager (never null after onEnable) */
     public EventManager getEventManager() {
         return eventManager;
     }

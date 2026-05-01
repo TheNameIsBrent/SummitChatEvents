@@ -8,17 +8,17 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 
 /**
- * Global chat listener registered permanently for the lifetime of the plugin.
+ * Global chat gate — runs at {@link EventPriority#HIGHEST} with
+ * {@code ignoreCancelled = false} so it fires regardless of what any
+ * other plugin has done.
  *
- * <p>Runs at {@link EventPriority#HIGH} so it sees messages after most other
- * plugins (e.g. chat-formatters) but before {@code HIGHEST}/{@code MONITOR}
- * listeners that only observe final state.
+ * <p>While a Summit event is active this listener cancels every message
+ * that has not already been approved by {@code CountUpEvent}'s own handler
+ * (which runs at LOWEST and, for winning submissions, marks the event
+ * un-cancelled). By running at HIGHEST we stomp over alert plugins, raffle
+ * plugins, chat formatters — anything that runs at NORMAL or HIGH.
  *
- * <p>When an active {@link com.summit.summitchatevents.events.ChatEvent} is
- * running, per-event listeners (registered by the event itself) handle the
- * actual logic at {@link EventPriority#LOWEST}. This class provides a
- * centralised fallback guard — currently a no-op placeholder — so future
- * global chat rules (mute, cooldown, etc.) have a single home.
+ * <p>When no Summit event is running this handler is a no-op.
  */
 public final class ChatListener implements Listener {
 
@@ -28,21 +28,23 @@ public final class ChatListener implements Listener {
         this.plugin = plugin;
     }
 
-    /**
-     * Global chat intercept. Individual event listeners registered by
-     * {@link com.summit.summitchatevents.events.ChatEvent} subclasses run
-     * first (LOWEST priority) and cancel the event themselves when active.
-     * This handler runs afterwards at HIGH priority for any future global rules.
-     */
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onPlayerChat(final AsyncPlayerChatEvent event) {
         final EventManager em = plugin.getEventManager();
         if (em == null || !em.isEventRunning()) {
-            return; // No active Summit event — let chat pass through normally
+            return; // Nothing active — normal chat
         }
 
-        // Active event chat listeners (LOWEST priority) already cancelled the
-        // event. This handler is a hook point for future global-level rules.
-        // Example: log chat attempts, rate-limit, apply global format, etc.
+        // If the LOWEST-priority CountUpEvent handler approved this message
+        // (winning number from an eligible player) it set cancelled=false.
+        // Any other message — including those from alert/raffle plugins that
+        // were un-cancelled at NORMAL/HIGH — gets cancelled here.
+        if (!event.isCancelled()) {
+            // This message was explicitly approved by CountUpEvent — leave it.
+            return;
+        }
+
+        // Everything else stays cancelled.
+        event.setCancelled(true);
     }
 }
