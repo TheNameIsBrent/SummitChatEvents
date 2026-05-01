@@ -20,7 +20,7 @@ permissions:
     description: Allows starting a Summit event via /summitevent start <name>.
     default: op
   summitevents.play:
-    description: Allows participating in active Summit events (typing numbers in chat).
+    description: Allows participating in CountUp events. Not required for Wavelength (everyone joins).
     default: true
   summitevents.overridechat:
     description: Bypasses the chat block during an active event; can still play.
