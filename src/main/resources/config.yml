@@ -19,6 +19,7 @@ events:
 
   # ── Count Up ─────────────────────────────────────────────────────────────
   count:
+    min-players: 2
     min-duration: 30
     max-duration: 90
     reward-command: "give %player% diamond 3"
@@ -38,6 +39,7 @@ events:
   # Placeholders: %round%, %player%, %players%, %guess%, %average%,
   #               %scale_min%, %scale_max%, %prompt%, %seconds%
   wavelength:
+    min-players: 3
     reward-command: "give %player% emerald 3"
 
     rounds:
@@ -88,9 +90,9 @@ events:
       final-round:     "%prefix%&c&lFinal Round! &eLast chance — remaining: &6%players%"
 
       # Single winner: uses %average%, %player%, %guess%
-      round-result-single: "%prefix%&e%player% wins! &7(guessed &6%guess%&7, average &6%average%&7)"
+      round-result-single: "%prefix%&e&lWinner: &6&l%player% &7(average &6%average%&7)"
       # Tie (2+ tied): uses %average%, %players%  where %players% = "Alice (75), Bob (75)"
-      round-result-tie:    "%prefix%&6Its a tie! &e%players% &7(average &6%average%&7)"
+      round-result-tie:    "%prefix%&6&lIt's a tie! &e%players% &7(average &6%average%&7)"
 
       guessing-over:   "&6&l\u2728 Ohhh, lots of guesses! Here comes the result..."
 

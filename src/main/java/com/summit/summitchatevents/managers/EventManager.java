@@ -77,7 +77,7 @@ public final class EventManager {
     // Result type
     // -----------------------------------------------------------------------
 
-    public enum StartResult { SUCCESS, ALREADY_RUNNING, NOT_FOUND }
+    public enum StartResult { SUCCESS, ALREADY_RUNNING, NOT_FOUND, NOT_ENOUGH_PLAYERS }
 
     // -----------------------------------------------------------------------
     // Control API
@@ -96,6 +96,12 @@ public final class EventManager {
 
         final ChatEvent event = registry.get(normalise(key));
         if (event == null) return StartResult.NOT_FOUND;
+
+        // Check minimum player count
+        final int online = plugin.getServer().getOnlinePlayers().size();
+        if (online < event.getMinPlayers()) {
+            return StartResult.NOT_ENOUGH_PLAYERS;
+        }
 
         // Start first — set active only on success
         event.start();
@@ -132,6 +138,12 @@ public final class EventManager {
 
     public @NotNull Set<String> getRegisteredEventKeys() {
         return Collections.unmodifiableSet(registry.keySet());
+    }
+
+    /** @return the event registered under {@code key}, or {@code null} if not found */
+    @Nullable
+    public ChatEvent getRegisteredEvent(final @NotNull String key) {
+        return registry.get(normalise(key));
     }
 
     // -----------------------------------------------------------------------

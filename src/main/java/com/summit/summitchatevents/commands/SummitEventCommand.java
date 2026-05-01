@@ -147,6 +147,12 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
             case NOT_FOUND -> msg(sender, C_ERR + "Unknown event: " + C_INFO + key
                     + C_ERR + ". Available: "
                     + plugin.getEventManager().getRegisteredEventKeys());
+            case NOT_ENOUGH_PLAYERS -> {
+                final var ev = plugin.getEventManager().getRegisteredEvent(key);
+                final int min = ev != null ? ev.getMinPlayers() : 0;
+                msg(sender, C_ERR + "Not enough players online. This event requires at least "
+                        + C_INFO + min + C_ERR + " players.");
+            }
         }
     }
 

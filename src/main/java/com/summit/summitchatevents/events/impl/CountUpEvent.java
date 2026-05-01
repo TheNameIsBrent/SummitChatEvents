@@ -110,6 +110,11 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     @Override
+    public int getMinPlayers() {
+        return getPlugin().getPluginConfig().getCountMinPlayers();
+    }
+
+    @Override
     protected void onStart() {
         live = false;
         currentNumber.set(0);

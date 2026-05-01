@@ -46,6 +46,7 @@ public final class WavelengthConfig {
     // Fields
     // -----------------------------------------------------------------------
 
+    private final int    minPlayers;
     private final String rewardCommand;
     private final List<Long> roundDurationTicks;
     private final List<Scale> scales;
@@ -82,6 +83,7 @@ public final class WavelengthConfig {
         final String base = "events.wavelength";
         final ConfigurationSection root = yaml.getConfigurationSection(base);
 
+        minPlayers    = yaml.getInt(base + ".min-players", 3);
         rewardCommand = yaml.getString(base + ".reward-command", "");
 
         // ── Round durations ────────────────────────────────────────────────
@@ -199,6 +201,7 @@ public final class WavelengthConfig {
     // Message accessors
     // -----------------------------------------------------------------------
 
+    public int    getMinPlayers()          { return minPlayers; }
     public String getRewardCommand()       { return rewardCommand; }
     public String getMsgBannerTop()        { return msgBannerTop; }
     public String getMsgBannerBottom()     { return msgBannerBottom; }

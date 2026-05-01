@@ -129,6 +129,12 @@ public abstract class ChatEvent {
     }
 
     /**
+     * Returns the minimum number of online players required to start this event.
+     * The command handler checks this before calling {@link #start()}.
+     */
+    public abstract int getMinPlayers();
+
+    /**
      * Called by the stop command before {@link #stop()} to signal that this
      * event was terminated by an administrator rather than finishing naturally.
      *

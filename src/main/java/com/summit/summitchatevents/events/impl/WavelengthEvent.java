@@ -66,7 +66,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private static final long T_ROUND_CONTEXT   = 40L;  // 2 s between context and scale
     private static final long T_SCALE_TO_PROMPT = 30L;  // 1.5 s
     private static final long T_PROMPT_TO_OPEN  = 20L;  // 1 s
-    private static final long T_REVEAL_BUILDUP  = 20L;  // 1 s between "here comes..." and result
+    private static final long T_REVEAL_BUILDUP  = 60L;  // 3 s between "here comes..." and result
     private static final long T_BETWEEN_ROUNDS  = 60L;  // 3 s gap between rounds
 
     private static final int  MAX_ROUNDS        = 3;
@@ -104,6 +104,11 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
     // ChatEvent lifecycle — main thread
     // -----------------------------------------------------------------------
+
+    @Override
+    public int getMinPlayers() {
+        return getPlugin().getPluginConfig().getWavelengthConfig().getMinPlayers();
+    }
 
     @Override
     protected void onStart() {
@@ -149,12 +154,12 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         } else if (winners == null || winners.isEmpty()) {
             broadcast(wcfg.getMsgNoWinner());
         } else if (winners.size() == 1) {
-            broadcast(WavelengthConfig.format(wcfg.getMsgWinner(),
-                    -1, resolvePlayerName(winners.get(0)), -1, -1, null, null, null));
+            // Round-result-single already broadcast the winner announcement.
+            // Just run reward here.
             runRewardCommands(wcfg, winners);
         } else {
-            broadcast(WavelengthConfig.format(wcfg.getMsgMultipleWinners(),
-                    -1, null, -1, -1, null, null, null, null, buildNameList(winners)));
+            // Round-result-tie already broadcast the tie announcement during endRound.
+            // Just run rewards here.
             runRewardCommands(wcfg, winners);
         }
 
@@ -303,12 +308,12 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         if (tied.size() == 1) {
             final UUID u = tied.get(0);
             resultMsg = WavelengthConfig.format(wcfg.getMsgRoundResultSingle(),
-                    -1, resolvePlayerName(u), tiedGuesses.get(u), -1,
+                    -1, resolvePlayerName(u), -1, -1,
                     null, null, null, avgDisplay, null);
         } else {
             // Build tied-players string using § codes (string is already colour-translated)
             final String tiedStr = tied.stream()
-                    .map(u -> resolvePlayerName(u) + " \u00a77(\u00a76" + tiedGuesses.get(u) + "\u00a77)")
+                    .map(WavelengthEvent::resolvePlayerName)
                     .collect(Collectors.joining("\u00a7e, "));
             resultMsg = WavelengthConfig.format(wcfg.getMsgRoundResultTie(),
                     -1, null, -1, -1, null, null, null, avgDisplay, tiedStr);

@@ -26,6 +26,7 @@ public final class PluginConfig {
     // Count Up event
     // -----------------------------------------------------------------------
 
+    private final int    countMinPlayers;
     private final int    countMinDuration;
     private final int    countMaxDuration;
     private final String countRewardCommand;
@@ -58,6 +59,7 @@ public final class PluginConfig {
         debug  = cfg.getBoolean("debug", false);
 
         // ── Count Up ────────────────────────────────────────────────────────
+        countMinPlayers    = cfg.getInt("events.count.min-players", 2);
         countMinDuration   = cfg.getInt("events.count.min-duration", 30);
         countMaxDuration   = cfg.getInt("events.count.max-duration", 90);
         countRewardCommand = cfg.getString("events.count.reward-command", "");
