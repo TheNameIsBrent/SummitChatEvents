@@ -1,40 +1,44 @@
 # ══════════════════════════════════════════════════════
 #  SummitChatEvents — Configuration
-#  Color codes: use & for legacy codes (&a, &c, &e, &l …)
-#  Placeholders: %player% = winner name, %number% = last number reached
+#  Color codes : use & for legacy codes (&a, &c, &e, &l …)
+#  Placeholders: %prefix%  = the prefix value below
+#                %player%  = player / winner name
+#                %number%  = last number reached (count event)
+#                %round%   = current round     (wavelength event)
 # ══════════════════════════════════════════════════════
 
-# Prefix prepended to all plugin messages.
-prefix: "&6[&eCount Up&6]&r "
+# Prefix injected wherever %prefix% appears in any message.
+prefix: "&6[&eSummitEvents&6]&r "
 
 # Set to true for verbose console output.
 debug: false
 
 events:
+
+  # ── Count Up ───────────────────────────────────────
   count:
-    # Duration range in seconds — a random value in this range is chosen each run.
     min-duration: 30
     max-duration: 90
-
-    # Console command executed when the event ends with a winner.
-    # Use %player% for the winner's name. Leave blank ("") to disable.
     reward-command: "give %player% diamond 3"
 
     messages:
-      # Step 1 — immediately on /summitevent start
-      announce:   "&e&lA Count Up event is about to begin! Get ready!"
+      announce:   "%prefix%&e&lA Count Up event is about to begin! Get ready!"
+      rules:      "%prefix%&7How it works: &fType the next number. No two in a row!"
+      here-we-go: "%prefix%&a&lHere we go!"
+      no-winner:  "%prefix%&cThe event ended &7— &cnobody scored!"
+      winner:     "%prefix%&aEvent over! &eWinner: &6&l%player% &awith &e%number%&a. Well played!"
+      reward:     "%prefix%&6%player% &ehas been rewarded for winning!"
 
-      # Step 2 — after 3 seconds
-      rules:      "&7How it works: &fType the next number in chat. Don't send two in a row. First correct number wins the round!"
+  # ── Wavelength ─────────────────────────────────────
+  wavelength:
+    max-rounds: 5
 
-      # Step 3 — after another 3 seconds
-      here-we-go: "&a&lHere we go!"
-
-      # Shown when the event ends with no one scoring
-      no-winner:  "&cThe event ended &7— &cnobody scored!"
-
-      # Shown when the event ends with a winner (%player%, %number%)
-      winner:     "&aEvent over! &eWinner: &6&l%player% &awith the last number &e%number%&a. Well played!"
-
-      # Broadcast after the reward command runs (%player%)
-      reward:     "&6%player% &ehas been rewarded for winning the Count Up event!"
+    messages:
+      announce:   "%prefix%&d&lA Wavelength event is starting! Get ready to guess!"
+      rules:      "%prefix%&7How it works: &fGuess a number between 1 and 100. Closest wins the round!"
+      here-we-go: "%prefix%&a&lHere we go!"
+      round-start: "%prefix%&eRound &6&l%round%&e has started! Type your guess (1-100)."
+      no-winner:  "%prefix%&cThe event ended &7— &cnobody scored!"
+      winner:     "%prefix%&aEvent over! &eWinner: &6&l%player%&a. Well played!"
+      reward:     "%prefix%&6%player% &ehas been rewarded for winning Wavelength!"
+    reward-command: "give %player% emerald 3"
