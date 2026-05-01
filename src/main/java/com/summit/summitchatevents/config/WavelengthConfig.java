@@ -111,6 +111,12 @@ public final class WavelengthConfig {
     private final String msgNoWinner;
     private final String msgReward;
     private final String msgGuessAck;
+    private final String msgRound2Start;
+    private final String msgFinalRound;
+    private final String msgStopped;
+    private final String msgCountdown;
+    private final String msgGuessingOver;
+    private final String msgRewardMultiple;
     private final String msgRoundResult;
     private final String msgTieContinues;
     private final String msgTieEliminated;
@@ -208,6 +214,18 @@ public final class WavelengthConfig {
                 "%prefix%&6%player% &ehas been rewarded for winning Wavelength!");
         msgGuessAck       = msg(yaml, rawPrefix, msgBase + ".guess-ack",
                 "%prefix%&7Your guess &e%guess%&7 has been recorded!");
+        msgRound2Start    = msg(yaml, rawPrefix, msgBase + ".round-2-start",
+                "%prefix%&6&lTie! &eRound 2 \u2014 only tied players continue: &6%players%");
+        msgFinalRound     = msg(yaml, rawPrefix, msgBase + ".final-round",
+                "%prefix%&c&lFinal Round! &eLast chance: &6%players%");
+        msgStopped        = msg(yaml, rawPrefix, msgBase + ".stopped",
+                "%prefix%&cThe event was stopped by an administrator.");
+        msgCountdown      = msg(yaml, rawPrefix, msgBase + ".countdown",
+                "%prefix%&e%seconds% seconds remaining!");
+        msgGuessingOver   = msg(yaml, rawPrefix, msgBase + ".guessing-over",
+                "%prefix%&6Ohhh, we got a lot of guesses... here comes the winner!");
+        msgRewardMultiple = msg(yaml, rawPrefix, msgBase + ".reward-multiple",
+                "%prefix%&6%players% &ehave all been rewarded for winning Wavelength!");
         msgRoundResult    = msg(yaml, rawPrefix, msgBase + ".round-result",
                 "%prefix%&eThe average was &6%average%&e. Closest: &6&l%player% &e(guessed &6%guess%&e)!");
         msgTieContinues   = msg(yaml, rawPrefix, msgBase + ".tie-continues",
@@ -278,6 +296,12 @@ public final class WavelengthConfig {
     public String getMsgTieEliminated()  { return msgTieEliminated; }
     public String getMsgTieAdvanced()    { return msgTieAdvanced; }
     public String getMsgMultipleWinners(){ return msgMultipleWinners; }
+    public String getMsgRound2Start()    { return msgRound2Start; }
+    public String getMsgFinalRound()     { return msgFinalRound; }
+    public String getMsgStopped()        { return msgStopped; }
+    public String getMsgCountdown()      { return msgCountdown; }
+    public String getMsgGuessingOver()   { return msgGuessingOver; }
+    public String getMsgRewardMultiple() { return msgRewardMultiple; }
 
     // -----------------------------------------------------------------------
     // Message formatting helpers

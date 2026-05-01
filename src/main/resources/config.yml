@@ -13,6 +13,9 @@ prefix: "&6[&eSummitEvents&6]&r "
 # Verbose console logging.
 debug: false
 
+# Broadcast when an admin forcibly stops an event with /summitevent stop.
+stopped-message: "%prefix%&cThe event has been stopped by an administrator."
+
 events:
 
   # ── Count Up ─────────────────────────────────────────────────────────────
@@ -93,7 +96,11 @@ events:
       # Shown after each round (average and closest player)
       round-result: "%prefix%&eThe average guess was &6%average%&e. Closest: &6&l%player% &e(guessed &6%guess%&e)!"
       # Broadcast when 3+ players tie and the event continues
-      tie-continues: "%prefix%&6&lIt's a tie! &eThe following players continue to the next round: &6%players%"
+      # Shown before round 2 starts (3+ tied after round 1)
+      round-2-start: "%prefix%&6&lTie! &eRound 2 — only tied players continue: &6%players%"
+      # Shown before the final round starts (3+ tied after round 2)
+      final-round: "%prefix%&c&lFinal Round! &eLast chance — only tied players remain: &6%players%"
+      tie-continues: "%prefix%&6&lIt's a tie! &eThe following players continue: &6%players%"
       # Private message to players who are eliminated after a tie round
       tie-eliminated: "%prefix%&cYou have been eliminated. Better luck next time!"
       # Private message to players who advance after a tie round
@@ -104,3 +111,9 @@ events:
       winner:       "%prefix%&aEvent over! &eWinner: &6&l%player%&a!"
       reward:       "%prefix%&6%player% &ehas been rewarded for winning Wavelength!"
       guess-ack:    "%prefix%&7Your guess &e%guess%&7 has been recorded. Wait for the round to end!"
+      # Countdown warning — %seconds% = seconds remaining
+      countdown:    "%prefix%&e%seconds% seconds remaining!"
+      # Shown when guessing closes, before the result reveal
+      guessing-over: "%prefix%&6Ohhh, we got a lot of guesses... here comes the winner!"
+      # Combined reward message when multiple winners share the prize — %players% = comma-list
+      reward-multiple: "%prefix%&6%players% &ehave all been rewarded for winning Wavelength!"

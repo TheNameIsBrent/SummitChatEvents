@@ -1,6 +1,7 @@
 package com.summit.summitchatevents.commands;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
+import org.bukkit.Bukkit;
 import com.summit.summitchatevents.managers.EventManager;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -28,9 +29,11 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
     // -----------------------------------------------------------------------
 
     private static final String SUB_START  = "start";
+    private static final String SUB_STOP   = "stop";
     private static final String SUB_RELOAD = "reload";
 
     private static final String PERM_START  = "summitevents.start";
+    private static final String PERM_STOP   = "summitevents.stop";
     private static final String PERM_RELOAD = "summitevents.reload";
 
     // Colour shortcuts (§-coded legacy strings — safe in command feedback)
@@ -71,6 +74,7 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
 
         switch (args[0].toLowerCase()) {
             case SUB_START  -> handleStart(sender, args, label);
+            case SUB_STOP   -> handleStop(sender);
             case SUB_RELOAD -> handleReload(sender);
             default         -> {
                 msg(sender, C_ERR + "Unknown sub-command.");
@@ -94,6 +98,7 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             final List<String> subs = new ArrayList<>();
             if (sender.hasPermission(PERM_START))  subs.add(SUB_START);
+            if (sender.hasPermission(PERM_STOP))   subs.add(SUB_STOP);
             if (sender.hasPermission(PERM_RELOAD)) subs.add(SUB_RELOAD);
             return filterPrefix(subs, args[0]);
         }
@@ -145,6 +150,25 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    private void handleStop(final CommandSender sender) {
+        if (!sender.hasPermission(PERM_STOP)) {
+            msg(sender, C_ERR + "You do not have permission to stop events.");
+            return;
+        }
+
+        if (!plugin.getEventManager().isEventRunning()) {
+            msg(sender, C_ERR + "No event is currently running.");
+            return;
+        }
+
+        // Broadcast the public stop message before stopping so it reaches players
+        Bukkit.broadcastMessage(plugin.getPluginConfig().getStoppedMessage());
+
+        plugin.getEventManager().stopCurrentEvent();
+        msg(sender, C_OK + "Event stopped.");
+        plugin.getLogger().info(sender.getName() + " stopped the active event.");
+    }
+
     private void handleReload(final CommandSender sender) {
         if (!sender.hasPermission(PERM_RELOAD)) {
             msg(sender, C_ERR + "You do not have permission to reload the config.");
@@ -164,6 +188,7 @@ public final class SummitEventCommand implements CommandExecutor, TabCompleter {
     private void sendUsage(final CommandSender sender, final String label) {
         msg(sender, C_INFO + "\u00a7lSummitEvents commands:");
         msg(sender, C_INFO + "  /" + label + " start <event>" + C_RST + " \u00a77\u2014 Start an event");
+        msg(sender, C_INFO + "  /" + label + " stop"          + C_RST + " \u00a77\u2014 Stop the active event");
         msg(sender, C_INFO + "  /" + label + " reload"        + C_RST + " \u00a77\u2014 Reload config");
     }
 

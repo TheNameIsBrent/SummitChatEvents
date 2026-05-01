@@ -41,6 +41,7 @@ public final class PluginConfig {
     // -----------------------------------------------------------------------
 
     private final WavelengthConfig wavelengthConfig;
+    private final String            stoppedMessage;
 
     // -----------------------------------------------------------------------
     // Constructor
@@ -73,6 +74,10 @@ public final class PluginConfig {
                 "%prefix%&6%player% &ehas been rewarded!");
 
         // ── Wavelength ───────────────────────────────────────────────────────
+        stoppedMessage = msg(cfg, rawPrefix == null ? "" : rawPrefix,
+                "stopped-message",
+                "%prefix%&cThe event has been stopped by an administrator.");
+
         wavelengthConfig = new WavelengthConfig(cfg,
                 rawPrefix == null ? "" : rawPrefix,
                 plugin.getLogger());
@@ -108,6 +113,7 @@ public final class PluginConfig {
     // -----------------------------------------------------------------------
 
     public WavelengthConfig getWavelengthConfig() { return wavelengthConfig; }
+    public String           getStoppedMessage()   { return stoppedMessage; }
 
     // -----------------------------------------------------------------------
     // Static helpers

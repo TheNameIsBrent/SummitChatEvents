@@ -31,32 +31,37 @@ import java.util.stream.Collectors;
  * Wavelength — a multi-round number-placement event.
  *
  * <h3>How it works</h3>
- * Each round a random scale (e.g. "Worst mob ←→ Best mob") and a prompt
- * (e.g. "Creeper") are revealed. Players type a number 0–100 to place the
- * prompt on that scale. When the round timer expires, the average of all
- * guesses is computed; the player(s) closest to that average advance.
+ * Each round a random scale (e.g. "Worst mob ←→ Best mob") and a unique
+ * prompt (e.g. "Creeper") are revealed. Players type a number 0–100 to
+ * place the prompt on that scale. When the timer expires, the exact average
+ * of all guesses is computed (as a double); the player(s) closest to that
+ * average advance.
+ *
+ * <h3>Average calculation</h3>
+ * Deltas are computed against the <em>exact</em> double-precision average —
+ * never against a rounded integer — so two players equidistant from the
+ * midpoint always produce a perfect tie.
  *
  * <h3>End-round outcome</h3>
  * <ul>
  *   <li><b>0 guesses</b> — no winner, event ends.</li>
  *   <li><b>1–2 tied players</b> — they win; event ends.</li>
- *   <li><b>3+ tied players, round &lt; 3</b> — tied players only continue to
- *       the next round. Eliminated players receive a private message.
- *       Advancing players receive a private message. No round number is
- *       broadcast (just the scale and prompt for the next round).</li>
- *   <li><b>3+ tied players, round == 3</b> — all tied players win together.</li>
+ *   <li><b>3+ tied, round &lt; 3</b> — tied players continue; others are
+ *       eliminated. A "Round 2" or "Final Round" context message is shown
+ *       before the next scale/prompt reveal.</li>
+ *   <li><b>3+ tied, round == 3</b> — all tied players win together.</li>
  * </ul>
  *
- * <h3>Participation</h3>
- * Every online player is added to {@link #activePlayers} on start — no
- * permission required. Players with {@value #PERM_OVERRIDE} can bypass the
- * chat block while still participating normally.
+ * <h3>Prompt deduplication</h3>
+ * Each prompt used during the event is tracked. Subsequent rounds never
+ * repeat a prompt from the same event session. If all prompts are exhausted
+ * the tracking set is cleared and prompts may repeat.
  *
  * <h3>Thread safety</h3>
  * {@link AsyncPlayerChatEvent} fires async. {@link #guesses} and
  * {@link #activePlayers} are guarded by {@code synchronized(this)}.
- * {@link #live} is {@code volatile}. All Bukkit calls that require the main
- * thread are dispatched via {@code runTask()}.
+ * {@link #live} is {@code volatile}. Main-thread Bukkit calls are dispatched
+ * via the scheduler when invoked from async context.
  */
 public final class WavelengthEvent extends ChatEvent implements Listener {
 
@@ -67,21 +72,16 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private static final String PERM_OVERRIDE = "summitevents.overridechat";
 
     // -----------------------------------------------------------------------
-    // Intro timing (ticks; 20t = 1 s)
+    // Timing constants (ticks; 20t = 1 s)
     // -----------------------------------------------------------------------
 
-    private static final long T_RULES       = 60L;  // 3 s after announce
-    private static final long T_HERE_WE_GO  = 120L; // 3 s after rules
-    private static final long T_START       = 160L; // 2 s after here-we-go
-
-    // -----------------------------------------------------------------------
-    // Round reveal timing — staggered for dramatic effect
-    // -----------------------------------------------------------------------
-
-    /** Delay between scale reveal and prompt reveal (ticks). */
-    private static final long T_SCALE_TO_PROMPT = 30L;  // 1.5 s
-    /** Delay after prompt before guessing opens (ticks). */
-    private static final long T_PROMPT_TO_OPEN  = 20L;  // 1 s
+    private static final long T_RULES          = 60L;  // intro: 3 s after announce
+    private static final long T_HERE_WE_GO     = 120L; // intro: 3 s after rules
+    private static final long T_START          = 160L; // intro: 2 s after here-we-go
+    private static final long T_ROUND_CONTEXT  = 40L;  // 2 s between context msg and scale
+    private static final long T_SCALE_TO_PROMPT = 30L; // 1.5 s between scale and prompt
+    private static final long T_PROMPT_TO_OPEN  = 20L; // 1 s between prompt and guessing open
+    private static final long T_RESULT_PAUSE   = 60L;  // 3 s after result before next action
 
     // -----------------------------------------------------------------------
     // Max tie-break rounds
@@ -92,22 +92,28 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
     // Game state
     // Collections guarded by synchronized(this).
-    // Scalar fields and currentScale*/currentPrompt are main-thread-only.
-    // live is volatile — written on main thread, read on async.
+    // Scalar fields / String fields are main-thread-only.
+    // live is volatile.
     // -----------------------------------------------------------------------
 
-    /** Players still eligible to guess this round. Replaced after each tie. */
+    /** Players eligible to guess this round. Shrinks after each tie round. */
     private final Set<UUID>          activePlayers = new HashSet<>();
 
     /**
      * Guesses for the current round: UUID → value (0–100).
-     * Written from async chat thread under lock; snapshot taken on main thread.
+     * Written async under lock; read on main thread via snapshot.
      */
-    private final Map<UUID, Integer> guesses       = new HashMap<>();
+    private final Map<UUID, Integer> guesses = new HashMap<>();
 
     /**
-     * Final winners populated by {@link #endRound()} before the event stops.
-     * Null until the event concludes. Used by {@link #onStop()} to announce.
+     * Tracks all "scaleMin|prompt" pairs used this event to prevent repeats.
+     * Main-thread-only.
+     */
+    private final Set<String>        usedPrompts = new HashSet<>();
+
+    /**
+     * Set by {@link #concludeEvent} before triggering stop; read by
+     * {@link #onStop()} to announce the result.
      */
     @Nullable
     private List<UUID> finalWinners = null;
@@ -117,8 +123,10 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private String currentScaleMax = "";
     private String currentPrompt   = "";
 
+    /** True only while a round is actively accepting guesses. */
     private volatile boolean live = false;
 
+    /** All pending scheduler tasks — cancelled together in {@link #onStop()}. */
     private final List<BukkitTask> tasks  = new ArrayList<>();
     private final Random           random = new Random();
 
@@ -143,6 +151,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 activePlayers.add(p.getUniqueId());
             }
         }
+        usedPrompts.clear();
         currentRound    = 0;
         currentScaleMin = "";
         currentScaleMax = "";
@@ -168,28 +177,28 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         if (winners == null || winners.isEmpty()) {
             broadcast(wcfg.getMsgNoWinner());
         } else if (winners.size() == 1) {
+            // Single clear winner
             final String name = resolvePlayerName(winners.get(0));
             broadcast(WavelengthConfig.format(wcfg.getMsgWinner(),
                     -1, name, -1, -1, null, null, null));
-            runRewardCommand(wcfg, name);
+            runRewardCommands(wcfg, winners);
         } else {
-            // Multiple winners
+            // 2+ tied winners — use the multiple-winners message
             final String playerList = buildNameList(winners);
             broadcast(WavelengthConfig.format(wcfg.getMsgMultipleWinners(),
                     -1, null, -1, -1, null, null, null, null, playerList));
-            for (final UUID uuid : winners) {
-                runRewardCommand(wcfg, resolvePlayerName(uuid));
-            }
+            runRewardCommands(wcfg, winners);
         }
 
-        getPlugin().getLogger().info("[WavelengthEvent] Event ended after round "
+        getPlugin().getLogger().info("[WavelengthEvent] Ended after round "
                 + currentRound + ". Winners: "
-                + (winners != null ? buildNameList(winners) : "none"));
+                + (winners != null && !winners.isEmpty() ? buildNameList(winners) : "none"));
 
         synchronized (this) {
             activePlayers.clear();
             guesses.clear();
         }
+        usedPrompts.clear();
         finalWinners = null;
         currentRound = 0;
     }
@@ -203,7 +212,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         schedule(0L,           () -> broadcast(wcfg.getMsgAnnounce()));
         schedule(T_RULES,      () -> broadcast(wcfg.getMsgRules()));
         schedule(T_HERE_WE_GO, () -> broadcast(wcfg.getMsgHereWeGo()));
-        schedule(T_START,      this::startRound);
+        schedule(T_START,      () -> startRound(null)); // no context message for round 1
     }
 
     // -----------------------------------------------------------------------
@@ -213,60 +222,120 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     /**
      * Starts the next round.
      *
-     * <p>Picks a random scale and prompt, clears guesses, then broadcasts
-     * the scale and (after a stagger) the prompt — no round number is shown.
-     * After the full reveal, {@link #openRound(WavelengthConfig)} is called
-     * to set {@link #live} and schedule the round timer.
+     * @param contextMessage an optional message shown before the scale reveal
+     *                       (e.g. "Round 2 — only tied players!"), or
+     *                       {@code null} for the first round.
      */
-    private void startRound() {
+    private void startRound(@Nullable final String contextMessage) {
         currentRound++;
-        final WavelengthConfig       wcfg  = getPlugin().getPluginConfig().getWavelengthConfig();
-        final WavelengthConfig.Scale scale = wcfg.randomScale(random);
 
-        currentScaleMin = scale.getMin();
-        currentScaleMax = scale.getMax();
-        currentPrompt   = scale.randomPrompt(random);
+        // ── Pick a unique prompt ─────────────────────────────────────────────
+        final WavelengthConfig wcfg = getPlugin().getPluginConfig().getWavelengthConfig();
+        final String[] picked = pickUniquePrompt(wcfg);
+        currentScaleMin = picked[0];
+        currentScaleMax = picked[1];
+        currentPrompt   = picked[2];
+        usedPrompts.add(currentScaleMin + "|" + currentPrompt);
 
+        // ── Reset guesses ────────────────────────────────────────────────────
         synchronized (this) {
             guesses.clear();
         }
         live = false;
 
+        // ── Build staggered message sequence ─────────────────────────────────
         final String scaleMsg  = WavelengthConfig.format(wcfg.getMsgScale(),
                 -1, null, -1, -1, currentScaleMin, currentScaleMax, null);
         final String promptMsg = WavelengthConfig.format(wcfg.getMsgPrompt(),
                 -1, null, -1, -1, null, null, currentPrompt);
 
-        schedule(0L,                    () -> broadcast(scaleMsg));
-        schedule(T_SCALE_TO_PROMPT,     () -> broadcast(promptMsg));
-        schedule(T_SCALE_TO_PROMPT + T_PROMPT_TO_OPEN, () -> openRound(wcfg));
+        if (contextMessage != null) {
+            // Context message → pause → scale → pause → prompt → open
+            schedule(0L,                                              () -> broadcast(contextMessage));
+            schedule(T_ROUND_CONTEXT,                                 () -> broadcast(scaleMsg));
+            schedule(T_ROUND_CONTEXT + T_SCALE_TO_PROMPT,             () -> broadcast(promptMsg));
+            schedule(T_ROUND_CONTEXT + T_SCALE_TO_PROMPT + T_PROMPT_TO_OPEN, () -> openRound(wcfg));
+        } else {
+            // No context — scale → pause → prompt → open (same as intro flow)
+            schedule(0L,                    () -> broadcast(scaleMsg));
+            schedule(T_SCALE_TO_PROMPT,     () -> broadcast(promptMsg));
+            schedule(T_SCALE_TO_PROMPT + T_PROMPT_TO_OPEN, () -> openRound(wcfg));
+        }
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                + " — Scale: '" + currentScaleMin + " <-> " + currentScaleMax
-                + "' Prompt: '" + currentPrompt + "'");
-    }
-
-    /** Opens the round for guesses and starts the countdown timer. */
-    private void openRound(final WavelengthConfig wcfg) {
-        live = true;
-        final long ticks = wcfg.getRoundDurationTicks(currentRound);
-        schedule(ticks, this::endRound);
-        getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                + " open — " + (ticks / 20L) + "s.");
+                + " — '" + currentScaleMin + " <-> " + currentScaleMax
+                + "' / '" + currentPrompt + "'");
     }
 
     /**
-     * Called when the round timer expires.
+     * Selects a unique (scale, prompt) pair not yet used this event.
+     * Falls back to resetting the used set if all prompts are exhausted.
      *
-     * <h3>Steps</h3>
-     * <ol>
-     *   <li>Snapshot guesses.</li>
-     *   <li>Compute the average (sum / count), rounded to nearest integer.</li>
-     *   <li>Compute each player's {@code |guess − average|}.</li>
-     *   <li>Find the minimum delta and collect all players tied at that delta.</li>
-     *   <li>Broadcast the average and the closest player's guess.</li>
-     *   <li>Apply outcome rules based on tie count and round number.</li>
-     * </ol>
+     * @return {@code String[]{scaleMin, scaleMax, prompt}}
+     */
+    private String[] pickUniquePrompt(final WavelengthConfig wcfg) {
+        final List<WavelengthConfig.Scale> scales = wcfg.getScales();
+
+        // Build the full pool of available (scale, prompt) pairs
+        final List<String[]> pool = new ArrayList<>();
+        for (final WavelengthConfig.Scale scale : scales) {
+            for (final String prompt : scale.getPrompts()) {
+                final String key = scale.getMin() + "|" + prompt;
+                if (!usedPrompts.contains(key)) {
+                    pool.add(new String[]{scale.getMin(), scale.getMax(), prompt});
+                }
+            }
+        }
+
+        // If exhausted, reset and use the full pool
+        if (pool.isEmpty()) {
+            usedPrompts.clear();
+            getPlugin().getLogger().warning(
+                    "[WavelengthEvent] All prompts used — resetting pool.");
+            for (final WavelengthConfig.Scale scale : scales) {
+                for (final String prompt : scale.getPrompts()) {
+                    pool.add(new String[]{scale.getMin(), scale.getMax(), prompt});
+                }
+            }
+        }
+
+        return pool.get(random.nextInt(pool.size()));
+    }
+
+    /** Opens guessing, schedules countdown warnings, and starts the round timer. */
+    private void openRound(final WavelengthConfig wcfg) {
+        live = true;
+        final long ticks    = wcfg.getRoundDurationTicks(currentRound);
+        final long seconds  = ticks / 20L;
+
+        // Countdown warnings at 30, 10, 5, 4, 3, 2, 1 seconds remaining
+        final long[] warningSeconds = {30L, 10L, 5L, 4L, 3L, 2L, 1L};
+        for (final long w : warningSeconds) {
+            if (seconds > w) {
+                final long fireTicks = ticks - (w * 20L);
+                final String msg = wcfg.getMsgCountdown().replace("%seconds%", String.valueOf(w));
+                schedule(fireTicks, () -> broadcast(msg));
+            }
+        }
+
+        // Round timer — fires endRound
+        schedule(ticks, this::endRound);
+
+        getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
+                + " open — " + seconds + "s.");
+    }
+
+    /**
+     * Called when the round timer fires.
+     *
+     * <h3>Average logic</h3>
+     * The exact double-precision average is computed. Deltas are computed
+     * against this exact value — so two players equidistant from the midpoint
+     * always produce equal deltas and always tie, regardless of rounding.
+     *
+     * <h3>Display average</h3>
+     * The average shown to players is rounded to one decimal place for
+     * readability while still using the exact value for comparison.
      */
     private void endRound() {
         live = false;
@@ -277,64 +346,81 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             snapshot = new HashMap<>(guesses);
         }
 
-        // ── No guesses at all ────────────────────────────────────────────────
+        // ── No guesses ───────────────────────────────────────────────────────
         if (snapshot.isEmpty()) {
             broadcast(wcfg.getMsgNoWinner());
-            getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                    + " — no guesses.");
+            getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound + " — no guesses.");
             concludeEvent(Collections.emptyList());
             return;
         }
 
-        // ── Compute average ──────────────────────────────────────────────────
-        final int sum     = snapshot.values().stream().mapToInt(Integer::intValue).sum();
-        final int count   = snapshot.size();
-        final int average = (int) Math.round((double) sum / count);
+        // ── Exact double average ─────────────────────────────────────────────
+        final double exactAverage = snapshot.values().stream()
+                .mapToInt(Integer::intValue)
+                .average()
+                .orElse(0.0);
 
-        // ── Compute deltas and find minimum ──────────────────────────────────
-        int minDelta = Integer.MAX_VALUE;
+        // Display as one decimal place (e.g. 50.0 or 47.5)
+        final String avgDisplay = String.format("%.1f", exactAverage);
+
+        // ── Compute deltas against exact average ─────────────────────────────
+        double minDelta = Double.MAX_VALUE;
         for (final int guess : snapshot.values()) {
-            final int delta = Math.abs(guess - average);
+            final double delta = Math.abs(guess - exactAverage);
             if (delta < minDelta) minDelta = delta;
         }
 
-        // ── Collect all players tied at minimum delta ─────────────────────────
+        // ── Collect all players tied at minDelta ─────────────────────────────
+        // Use a small epsilon for floating-point equality
+        final double epsilon = 1e-9;
         final List<UUID> tied = new ArrayList<>();
         for (final Map.Entry<UUID, Integer> entry : snapshot.entrySet()) {
-            if (Math.abs(entry.getValue() - average) == minDelta) {
+            if (Math.abs(Math.abs(entry.getValue() - exactAverage) - minDelta) < epsilon) {
                 tied.add(entry.getKey());
             }
         }
 
-        // ── Broadcast result — average + closest player ───────────────────────
-        // Use the first tied player as the representative for the round-result message
-        final UUID   repUuid = tied.get(0);
-        final String repName = resolvePlayerName(repUuid);
-        final int    repGuess = snapshot.get(repUuid);
-
-        broadcast(WavelengthConfig.format(wcfg.getMsgRoundResult(),
-                -1, repName, repGuess, -1, null, null, null, String.valueOf(average), null));
+        // ── Dramatic build-up, then result ───────────────────────────────────
+        final String repName  = resolvePlayerName(tied.get(0));
+        final int    repGuess = snapshot.get(tied.get(0));
+        final String resultMsg = WavelengthConfig.format(wcfg.getMsgRoundResult(),
+                -1, repName, repGuess, -1, null, null, null, avgDisplay, null);
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
-                + " — average=" + average + " minDelta=" + minDelta
-                + " tiedPlayers=" + tied.size());
+                + " — exactAvg=" + exactAverage
+                + " minDelta=" + minDelta
+                + " tied=" + tied.size());
+
+        // Dramatic message first, then result after a short pause
+        broadcast(wcfg.getMsgGuessingOver());
+        schedule(60L, () -> broadcast(resultMsg)); // 3 s of suspense
 
         // ── Apply outcome rules ───────────────────────────────────────────────
         final int tiedCount = tied.size();
 
         if (tiedCount <= 2) {
-            // Case 1: 1 or 2 players — event ends, they win
-            concludeEvent(tied);
+            // 1 or 2 players — clear winner(s), end event
+            schedule(T_RESULT_PAUSE + 60L, () -> concludeEvent(tied));
 
         } else if (currentRound < MAX_ROUNDS) {
-            // Case 2: 3+ tied AND more rounds available — only tied players continue
+            // 3+ tied, more rounds available — narrow down to tied players only
             final String playerList = buildNameList(tied);
-            broadcast(WavelengthConfig.format(wcfg.getMsgTieContinues(),
-                    -1, null, -1, -1, null, null, null, null, playerList));
 
-            // Private messages
+            // Build the round-context message for the next round
+            final String nextContextMsg;
+            if (currentRound + 1 == MAX_ROUNDS) {
+                // Next round is the final
+                nextContextMsg = WavelengthConfig.format(wcfg.getMsgFinalRound(),
+                        -1, null, -1, -1, null, null, null, null, playerList);
+            } else {
+                // Next round is round 2
+                nextContextMsg = WavelengthConfig.format(wcfg.getMsgRound2Start(),
+                        -1, null, -1, -1, null, null, null, null, playerList);
+            }
+
+            // Send private DMs
             final Set<UUID> tiedSet = new HashSet<>(tied);
-            for (final UUID uuid : activePlayers) {
+            for (final UUID uuid : new HashSet<>(activePlayers)) { // snapshot to avoid CME
                 final Player p = Bukkit.getPlayer(uuid);
                 if (p == null) continue;
                 if (tiedSet.contains(uuid)) {
@@ -344,32 +430,29 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 }
             }
 
-            // Replace active players with only the tied players
+            // Narrow active players
             synchronized (this) {
                 activePlayers.clear();
                 activePlayers.addAll(tied);
             }
 
-            // Start next round after a short pause
-            schedule(80L, this::startRound); // 4-second gap
+            // After a brief pause, start the next round with the context message
+            schedule(T_RESULT_PAUSE + 60L, () -> startRound(nextContextMsg));
 
         } else {
-            // Case 3: 3+ tied AND round == MAX_ROUNDS — all tied players win
-            concludeEvent(tied);
+            // 3+ tied on the final round — everyone ties wins
+            schedule(T_RESULT_PAUSE + 60L, () -> concludeEvent(tied));
         }
     }
 
     /**
-     * Sets {@link #finalWinners} and delegates to the manager to call
-     * {@link #onStop()}, which reads {@code finalWinners} to announce results.
-     *
-     * @param winners the UUIDs who won; empty list means no winner
+     * Stores the final winners and triggers the manager to stop the event.
+     * {@link #onStop()} will read {@link #finalWinners} to announce results.
      */
     private void concludeEvent(final @NotNull List<UUID> winners) {
         finalWinners = new ArrayList<>(winners);
-        // Small pause so players can read the round result before the outro
         Bukkit.getScheduler().runTaskLater(getPlugin(),
-                () -> getPlugin().getEventManager().stopCurrentEvent(), 60L);
+                () -> getPlugin().getEventManager().stopCurrentEvent(), T_RESULT_PAUSE);
     }
 
     // -----------------------------------------------------------------------
@@ -382,17 +465,17 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         final boolean hasOverride = player.hasPermission(PERM_OVERRIDE);
         final String  raw         = event.getMessage().trim();
 
-        // Override players: non-number chat passes through
+        // Override players: non-number chat passes through freely
         if (hasOverride && !isInteger(raw)) {
             approveMessage(player);
             event.setCancelled(false);
             return;
         }
 
-        // Game not open — keep cancelled (no message needed during intros)
+        // Round not open — keep cancelled, no feedback during intros
         if (!live) return;
 
-        // Not a number — hint the player
+        // Not a number
         if (!isInteger(raw)) {
             final String hint = getPlugin().getPluginConfig().getPrefix()
                     + "\u00a7cPlease type a number between \u00a7e0\u00a7c and \u00a7e100\u00a7c.";
@@ -410,20 +493,18 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         // Range check
         if (guess < 0 || guess > 100) {
             final String rangeMsg = getPlugin().getPluginConfig().getPrefix()
-                    + "\u00a7cOut of range! Please type a number between \u00a7e0\u00a7c and \u00a7e100\u00a7c.";
+                    + "\u00a7cOut of range! Type a number between \u00a7e0\u00a7c and \u00a7e100\u00a7c.";
             Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(rangeMsg));
             return;
         }
 
-        // Active-player check
+        // Active-player check — only players in the current round's active set can guess
         final boolean isActive;
         synchronized (this) {
             isActive = activePlayers.contains(player.getUniqueId());
         }
         if (!isActive) {
-            final String lateMsg = getPlugin().getPluginConfig().getPrefix()
-                    + "\u00a7cYou are not participating in this round.";
-            Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(lateMsg));
+            // Silently cancel — they can see the chat is blocked, no extra noise needed
             return;
         }
 
@@ -436,7 +517,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
         if (alreadyGuessed) {
             final String alreadyMsg = getPlugin().getPluginConfig().getPrefix()
-                    + "\u00a7cYou have already submitted a guess for this round!";
+                    + "\u00a7cYou have already submitted a guess this round!";
             Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(alreadyMsg));
             return;
         }
@@ -452,16 +533,36 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // Helpers — main thread
     // -----------------------------------------------------------------------
 
-    private void runRewardCommand(final WavelengthConfig wcfg, final String winnerName) {
+    /**
+     * Runs the reward command for every winner in the list, then broadcasts
+     * a single combined reward message.
+     *
+     * <ul>
+     *   <li>One winner  → uses the single {@code reward} message with {@code %player%}.</li>
+     *   <li>Two+ winners → uses {@code reward-multiple} with {@code %players%}.</li>
+     * </ul>
+     */
+    private void runRewardCommands(final WavelengthConfig wcfg, final List<UUID> winners) {
         final String cmd = wcfg.getRewardCommand();
-        if (cmd == null || cmd.isBlank()) return;
-        // onStop() is already on the main thread
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
-                cmd.replace("%player%", winnerName));
-        broadcast(WavelengthConfig.format(wcfg.getMsgReward(),
-                -1, winnerName, -1, -1, null, null, null));
-        getPlugin().getLogger().info(
-                "[WavelengthEvent] Reward dispatched for " + winnerName);
+        if (cmd != null && !cmd.isBlank()) {
+            for (final UUID uuid : winners) {
+                final String name = resolvePlayerName(uuid);
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(),
+                        cmd.replace("%player%", name));
+                getPlugin().getLogger().info(
+                        "[WavelengthEvent] Reward dispatched for " + name);
+            }
+        }
+
+        // One combined broadcast after all commands have run
+        if (winners.size() == 1) {
+            final String name = resolvePlayerName(winners.get(0));
+            broadcast(WavelengthConfig.format(wcfg.getMsgReward(),
+                    -1, name, -1, -1, null, null, null));
+        } else {
+            final String playerList = buildNameList(winners);
+            broadcast(wcfg.getMsgRewardMultiple().replace("%players%", playerList));
+        }
     }
 
     private void approveMessage(final Player player) {
@@ -477,10 +578,6 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         tasks.add(Bukkit.getScheduler().runTaskLater(getPlugin(), task, delayTicks));
     }
 
-    /**
-     * Builds a comma-separated list of player names from a collection of UUIDs.
-     * Resolves online names; falls back to UUID string for offline players.
-     */
     private static String buildNameList(final List<UUID> uuids) {
         return uuids.stream()
                 .map(WavelengthEvent::resolvePlayerName)
@@ -491,7 +588,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // Helpers — thread-agnostic
     // -----------------------------------------------------------------------
 
-    @Nullable
+    @NotNull
     private static String resolvePlayerName(@Nullable final UUID uuid) {
         if (uuid == null) return "Unknown";
         final Player p = Bukkit.getPlayer(uuid);
