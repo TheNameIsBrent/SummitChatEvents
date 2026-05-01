@@ -1,0 +1,13 @@
+name: SummitChatEvents
+version: '${version}'
+main: com.summit.summitchatevents.SummitChatEventsPlugin
+api-version: '1.21'
+description: A Spigot/Paper plugin for advanced chat event handling.
+author: Summit
+website: https://github.com/your-org/summit-chat-events
+
+# Commands will be registered here in future iterations
+commands: {}
+
+# Permissions will be declared here in future iterations
+permissions: {}

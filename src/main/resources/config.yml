@@ -1,0 +1,16 @@
+# ─────────────────────────────────────────────
+#  SummitChatEvents — default configuration
+# ─────────────────────────────────────────────
+
+# Set to false to suppress verbose plugin logging.
+debug: false
+
+# Future sections — uncomment and populate as features are added.
+
+# chat:
+#   format: "<gray>[<aqua>%player_name%<gray>]</aqua> <white>%message%"
+#   cooldown-seconds: 2
+
+# filters:
+#   block-caps: true
+#   block-urls: false
