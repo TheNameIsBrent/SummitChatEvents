@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.summit"
-version = "1.0.0-SNAPSHOT"
+version = "1.0.0"
 description = "SummitChatEvents - A Spigot/Paper chat event plugin"
 
 java {
@@ -37,7 +37,8 @@ tasks {
     }
 
     shadowJar {
-        archiveClassifier.set("") // no "-all" suffix
+        archiveClassifier.set("")   // no "-all" suffix
+        archiveBaseName.set("summitchatevents") // → summitchatevents-1.0.0.jar
         minimize()
     }
 
