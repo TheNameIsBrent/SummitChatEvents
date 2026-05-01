@@ -137,10 +137,10 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         final String       winner = lastPlayerName.get();
 
         if (winner != null) {
-            broadcast(cfg.getPrefix() + PluginConfig.format(cfg.getCountMsgWinner(), winner, count));
+            broadcast(PluginConfig.format(cfg.getCountMsgWinner(), winner, count));
             runRewardCommand(cfg, winner);
         } else {
-            broadcast(cfg.getPrefix() + cfg.getCountMsgNoWinner());
+            broadcast(cfg.getCountMsgNoWinner());
         }
 
         getPlugin().getLogger().info(String.format(
@@ -157,13 +157,17 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     private void scheduleIntro() {
-        final PluginConfig cfg    = getPlugin().getPluginConfig();
-        final String       prefix = cfg.getPrefix();
+        final PluginConfig cfg = getPlugin().getPluginConfig();
 
-        schedule(0L,        () -> broadcast(prefix + cfg.getCountMsgAnnounce()));
-        schedule(T_RULES,   () -> broadcast(prefix + cfg.getCountMsgRules()));
-        schedule(T_HERE_WE_GO, () -> broadcast(prefix + cfg.getCountMsgHereWeGo()));
-        schedule(T_GO_LIVE, this::goLive);
+        // Big centred banner
+        schedule(0L, () -> {
+            broadcast(cfg.getCountMsgBannerTop());
+            broadcast(cfg.getCountMsgAnnounce());
+            broadcast(cfg.getCountMsgBannerBottom());
+        });
+        schedule(T_RULES,      () -> broadcast(cfg.getCountMsgRules()));
+        schedule(T_HERE_WE_GO, () -> broadcast(cfg.getCountMsgHereWeGo()));
+        schedule(T_GO_LIVE,    this::goLive);
     }
 
     private void goLive() {
@@ -293,8 +297,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         final String resolved = cmd.replace("%player%", winnerName);
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), resolved);
-            broadcast(cfg.getPrefix()
-                    + cfg.getCountMsgReward().replace("%player%", winnerName));
+            broadcast(cfg.getCountMsgReward().replace("%player%", winnerName));
             getPlugin().getLogger().info(
                     "[CountUpEvent] Reward dispatched for " + winnerName + ": " + resolved);
         });

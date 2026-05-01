@@ -7,51 +7,21 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.logging.Logger;
 
 /**
- * Parsed configuration for the Wavelength event.
- *
- * <p>Constructed once per config load by {@link PluginConfig}. Immutable after
- * construction — all collections are unmodifiable views or defensive copies.
- *
- * <h3>Config structure expected</h3>
- * <pre>
- * events:
- *   wavelength:
- *     reward-command: "give %player% emerald 3"
- *     rounds:
- *       round1-duration: 40
- *       round2-duration: 25
- *       round3-duration: 15
- *     scales:
- *       - scale-min: "Worst mob"
- *         scale-max: "Best mob"
- *         prompts:
- *           - "Creeper"
- *           - "Zombie"
- *     messages:
- *       announce:    "%prefix%..."
- *       round-start: "%prefix%&eRound %round%: %scale_min% &7<-> &e%scale_max%"
- *       prompt:      "%prefix%&fToday's prompt: &e%prompt%"
- *       ...
- * </pre>
+ * Parsed, immutable configuration for the Wavelength event.
+ * Constructed once per config load by {@link PluginConfig}.
  */
 public final class WavelengthConfig {
 
     // -----------------------------------------------------------------------
-    // Scale data class
+    // Scale — immutable value type
     // -----------------------------------------------------------------------
 
-    /**
-     * Represents one scale entry: a min label, a max label, and a list of prompts.
-     *
-     * <p>Immutable value type.
-     */
     public static final class Scale {
         private final String       min;
         private final String       max;
@@ -63,23 +33,12 @@ public final class WavelengthConfig {
             this.prompts = Collections.unmodifiableList(new ArrayList<>(prompts));
         }
 
-        /** The "low end" label of the scale (e.g. {@code "Worst mob"}). */
-        public @NotNull String getMin() { return min; }
-
-        /** The "high end" label of the scale (e.g. {@code "Best mob"}). */
-        public @NotNull String getMax() { return max; }
-
-        /** All prompts associated with this scale. Never empty (validated on load). */
+        public @NotNull String       getMin()     { return min; }
+        public @NotNull String       getMax()     { return max; }
         public @NotNull List<String> getPrompts() { return prompts; }
 
-        /** Returns a random prompt from this scale's list. */
         public @NotNull String randomPrompt(final Random rng) {
             return prompts.get(rng.nextInt(prompts.size()));
-        }
-
-        @Override
-        public String toString() {
-            return "Scale{min='" + min + "', max='" + max + "', prompts=" + prompts.size() + "}";
         }
     }
 
@@ -88,40 +47,32 @@ public final class WavelengthConfig {
     // -----------------------------------------------------------------------
 
     private final String rewardCommand;
-
-    /**
-     * Per-round durations in ticks, in round order.
-     * Index 0 = round 1, index 1 = round 2, etc.
-     * If a round index exceeds the list size, the last value is used.
-     */
     private final List<Long> roundDurationTicks;
-
-    /** All loaded scales. At least one is guaranteed after validation. */
     private final List<Scale> scales;
 
     // Messages
+    private final String msgBannerTop;
+    private final String msgBannerBottom;
     private final String msgAnnounce;
     private final String msgRules;
     private final String msgHereWeGo;
-    private final String msgRoundStart;
     private final String msgScale;
     private final String msgPrompt;
-    private final String msgRoundWinner;
-    private final String msgWinner;
-    private final String msgNoWinner;
-    private final String msgReward;
-    private final String msgGuessAck;
+    private final String msgRoundResultSingle;
+    private final String msgRoundResultTie;
+    private final String msgGuessingOver;
+    private final String msgCountdown;
     private final String msgRound2Start;
     private final String msgFinalRound;
-    private final String msgStopped;
-    private final String msgCountdown;
-    private final String msgGuessingOver;
-    private final String msgRewardMultiple;
-    private final String msgRoundResult;
-    private final String msgTieContinues;
     private final String msgTieEliminated;
     private final String msgTieAdvanced;
+    private final String msgWinner;
     private final String msgMultipleWinners;
+    private final String msgNoWinner;
+    private final String msgReward;
+    private final String msgRewardMultiple;
+    private final String msgGuessAck;
+    private final String msgStopped;
 
     // -----------------------------------------------------------------------
     // Constructor — called by PluginConfig
@@ -138,20 +89,15 @@ public final class WavelengthConfig {
         final ConfigurationSection roundSec =
                 root != null ? root.getConfigurationSection("rounds") : null;
         if (roundSec != null) {
-            // Collect keys in natural insertion order (round1-duration, round2-duration, …)
             final List<String> keys = new ArrayList<>(roundSec.getKeys(false));
-            Collections.sort(keys);  // alphabetical sort keeps round1 < round2 < round3
+            Collections.sort(keys);
             for (final String key : keys) {
-                final int secs = roundSec.getInt(key, 30);
-                durations.add((long) secs * 20L);
+                durations.add((long) roundSec.getInt(key, 15) * 20L);
             }
         }
         if (durations.isEmpty()) {
-            // Default: 3 rounds of 30 s each
-            durations.add(600L);
-            durations.add(600L);
-            durations.add(600L);
-            log.warning("[WavelengthConfig] No rounds defined — defaulting to 3 x 30s rounds.");
+            durations.add(300L); durations.add(200L); durations.add(100L); // 15s/10s/5s
+            log.warning("[WavelengthConfig] No rounds defined — defaulting to 15s/10s/5s.");
         }
         roundDurationTicks = Collections.unmodifiableList(durations);
 
@@ -163,99 +109,81 @@ public final class WavelengthConfig {
                 if (!(obj instanceof Map)) continue;
                 @SuppressWarnings("unchecked")
                 final Map<String, Object> map = (Map<String, Object>) obj;
-
                 final String scaleMin = str(map, "scale-min", "?");
                 final String scaleMax = str(map, "scale-max", "?");
-
                 final List<String> prompts = new ArrayList<>();
-                final Object promptObj = map.get("prompts");
-                if (promptObj instanceof List) {
-                    for (final Object p : (List<?>) promptObj) {
+                final Object po = map.get("prompts");
+                if (po instanceof List) {
+                    for (final Object p : (List<?>) po) {
                         if (p != null) prompts.add(p.toString());
                     }
                 }
-                if (prompts.isEmpty()) {
-                    log.warning("[WavelengthConfig] Scale '" + scaleMin + " <-> " + scaleMax
-                            + "' has no prompts — skipping.");
-                    continue;
-                }
-                loadedScales.add(new Scale(scaleMin, scaleMax, prompts));
+                if (!prompts.isEmpty()) loadedScales.add(new Scale(scaleMin, scaleMax, prompts));
+                else log.warning("[WavelengthConfig] Scale '" + scaleMin + "' has no prompts — skipped.");
             }
         }
         if (loadedScales.isEmpty()) {
-            // Fallback so the event can still run
-            loadedScales.add(new Scale("Worst", "Best",
-                    List.of("Default prompt — add scales to config!")));
-            log.warning("[WavelengthConfig] No valid scales found — using built-in fallback.");
+            loadedScales.add(new Scale("Worst", "Best", List.of("Default prompt — add scales!")));
+            log.warning("[WavelengthConfig] No valid scales — using built-in fallback.");
         }
         scales = Collections.unmodifiableList(loadedScales);
 
         // ── Messages ───────────────────────────────────────────────────────
-        final String msgBase = base + ".messages";
-        msgAnnounce   = msg(yaml, rawPrefix, msgBase + ".announce",
-                "%prefix%&d&lA Wavelength event is starting!");
-        msgRules      = msg(yaml, rawPrefix, msgBase + ".rules",
-                "%prefix%&7Place the prompt on the scale — type a number 1-100!");
-        msgHereWeGo   = msg(yaml, rawPrefix, msgBase + ".here-we-go",
-                "%prefix%&a&lHere we go!");
-        msgRoundStart = msg(yaml, rawPrefix, msgBase + ".round-start",
-                "%prefix%&eRound &6&l%round%&e has started!");
-        msgScale      = msg(yaml, rawPrefix, msgBase + ".scale",
-                "%prefix%&7Scale: &e%scale_min% &7<-> &e%scale_max%");
-        msgPrompt     = msg(yaml, rawPrefix, msgBase + ".prompt",
-                "%prefix%&fPrompt: &e&l%prompt%");
-        msgRoundWinner = msg(yaml, rawPrefix, msgBase + ".round-winner",
-                "%prefix%&eRound &6%round%&e winner: &6&l%player% &e(guessed &6%guess%&e, target &6%target%&e)!");
-        msgWinner     = msg(yaml, rawPrefix, msgBase + ".winner",
+        final String mb = base + ".messages";
+        msgBannerTop         = msg(yaml, rawPrefix, mb + ".banner-top",
+                "&d&m        &r &d&l   WAVELENGTH EVENT   &r &d&m        ");
+        msgBannerBottom      = msg(yaml, rawPrefix, mb + ".banner-bottom",
+                "&d&m==============================");
+        msgAnnounce          = msg(yaml, rawPrefix, mb + ".announce",
+                "&d&lA Wavelength event is starting!");
+        msgRules             = msg(yaml, rawPrefix, mb + ".rules",
+                "&7Place the prompt on the scale. &fType &e0&f-&e100&f.");
+        msgHereWeGo          = msg(yaml, rawPrefix, mb + ".here-we-go",
+                "&a&lHere we go!");
+        msgScale             = msg(yaml, rawPrefix, mb + ".scale",
+                "%prefix%&7Scale: &e%scale_min% &7\u2194 &e%scale_max%");
+        msgPrompt            = msg(yaml, rawPrefix, mb + ".prompt",
+                "%prefix%&fPrompt: &d&l%prompt%");
+        msgRoundResultSingle = msg(yaml, rawPrefix, mb + ".round-result-single",
+                "%prefix%&eAverage: &6%average%&e. Winner: &6&l%player% &7(&6%guess%&7)!");
+        msgRoundResultTie    = msg(yaml, rawPrefix, mb + ".round-result-tie",
+                "%prefix%&eAverage: &6%average%&e. Tied: &6&l%players%");
+        msgGuessingOver      = msg(yaml, rawPrefix, mb + ".guessing-over",
+                "&6&l\u2728 Ohhh, lots of guesses! Here comes the result...");
+        msgCountdown         = msg(yaml, rawPrefix, mb + ".countdown",
+                "%prefix%&e%seconds%s remaining!");
+        msgRound2Start       = msg(yaml, rawPrefix, mb + ".round-2-start",
+                "%prefix%&6&lTie! &eRound 2 \u2014 only these players continue: &6%players%");
+        msgFinalRound        = msg(yaml, rawPrefix, mb + ".final-round",
+                "%prefix%&c&lFinal Round! &eLast chance \u2014 remaining: &6%players%");
+        msgTieEliminated     = msg(yaml, rawPrefix, mb + ".tie-eliminated",
+                "%prefix%&cYou have been eliminated!");
+        msgTieAdvanced       = msg(yaml, rawPrefix, mb + ".tie-advanced",
+                "%prefix%&aYou advanced to the next round!");
+        msgWinner            = msg(yaml, rawPrefix, mb + ".winner",
                 "%prefix%&aEvent over! &eWinner: &6&l%player%&a!");
-        msgNoWinner   = msg(yaml, rawPrefix, msgBase + ".no-winner",
+        msgMultipleWinners   = msg(yaml, rawPrefix, mb + ".multiple-winners",
+                "%prefix%&6&lTie! &eAll tied players win: &6%players%");
+        msgNoWinner          = msg(yaml, rawPrefix, mb + ".no-winner",
                 "%prefix%&cThe event ended \u2014 nobody scored!");
-        msgReward     = msg(yaml, rawPrefix, msgBase + ".reward",
-                "%prefix%&6%player% &ehas been rewarded for winning Wavelength!");
-        msgGuessAck       = msg(yaml, rawPrefix, msgBase + ".guess-ack",
+        msgReward            = msg(yaml, rawPrefix, mb + ".reward",
+                "%prefix%&6%player% &ehas been rewarded!");
+        msgRewardMultiple    = msg(yaml, rawPrefix, mb + ".reward-multiple",
+                "%prefix%&6%players% &ehave all been rewarded!");
+        msgGuessAck          = msg(yaml, rawPrefix, mb + ".guess-ack",
                 "%prefix%&7Your guess &e%guess%&7 has been recorded!");
-        msgRound2Start    = msg(yaml, rawPrefix, msgBase + ".round-2-start",
-                "%prefix%&6&lTie! &eRound 2 \u2014 only tied players continue: &6%players%");
-        msgFinalRound     = msg(yaml, rawPrefix, msgBase + ".final-round",
-                "%prefix%&c&lFinal Round! &eLast chance: &6%players%");
-        msgStopped        = msg(yaml, rawPrefix, msgBase + ".stopped",
+        msgStopped           = msg(yaml, rawPrefix, mb + ".stopped",
                 "%prefix%&cThe event was stopped by an administrator.");
-        msgCountdown      = msg(yaml, rawPrefix, msgBase + ".countdown",
-                "%prefix%&e%seconds% seconds remaining!");
-        msgGuessingOver   = msg(yaml, rawPrefix, msgBase + ".guessing-over",
-                "%prefix%&6Ohhh, we got a lot of guesses... here comes the winner!");
-        msgRewardMultiple = msg(yaml, rawPrefix, msgBase + ".reward-multiple",
-                "%prefix%&6%players% &ehave all been rewarded for winning Wavelength!");
-        msgRoundResult    = msg(yaml, rawPrefix, msgBase + ".round-result",
-                "%prefix%&eThe average was &6%average%&e. Closest: &6&l%player% &e(guessed &6%guess%&e)!");
-        msgTieContinues   = msg(yaml, rawPrefix, msgBase + ".tie-continues",
-                "%prefix%&6&lTie! &eThese players continue: &6%players%");
-        msgTieEliminated  = msg(yaml, rawPrefix, msgBase + ".tie-eliminated",
-                "%prefix%&cYou have been eliminated. Better luck next time!");
-        msgTieAdvanced    = msg(yaml, rawPrefix, msgBase + ".tie-advanced",
-                "%prefix%&aYou advanced! Place your guess again.");
-        msgMultipleWinners = msg(yaml, rawPrefix, msgBase + ".multiple-winners",
-                "%prefix%&6&lIt\u2019s a tie! &eAll tied players win: &6%players%");
-
-        if (log.isLoggable(java.util.logging.Level.FINE)) {
-            log.fine("[WavelengthConfig] Loaded " + scales.size() + " scale(s), "
-                    + roundDurationTicks.size() + " round(s).");
-        }
     }
 
     // -----------------------------------------------------------------------
     // Round duration API
     // -----------------------------------------------------------------------
 
-    /** Total number of configured rounds. */
-    public int getRoundCount() { return roundDurationTicks.size(); }
+    public int  getRoundCount() { return roundDurationTicks.size(); }
 
-    /**
-     * Duration in ticks for the given round (1-indexed).
-     * If {@code round} exceeds the configured count, the last configured duration is returned.
-     */
     public long getRoundDurationTicks(final int round) {
-        if (roundDurationTicks.isEmpty()) return 600L;
+        if (roundDurationTicks.isEmpty()) return 300L;
         final int idx = Math.min(round - 1, roundDurationTicks.size() - 1);
         return roundDurationTicks.get(Math.max(idx, 0));
     }
@@ -264,55 +192,44 @@ public final class WavelengthConfig {
     // Scale API
     // -----------------------------------------------------------------------
 
-    /** All loaded scales. Never empty. */
-    public @NotNull List<Scale> getScales() { return scales; }
-
-    /**
-     * Returns a randomly chosen scale.
-     * All scales have equal probability.
-     */
-    public @NotNull Scale randomScale(final Random rng) {
-        return scales.get(rng.nextInt(scales.size()));
-    }
+    public @NotNull List<Scale>  getScales()               { return scales; }
+    public @NotNull Scale        randomScale(final Random r){ return scales.get(r.nextInt(scales.size())); }
 
     // -----------------------------------------------------------------------
     // Message accessors
     // -----------------------------------------------------------------------
 
-    public String getRewardCommand()  { return rewardCommand; }
-    public String getMsgAnnounce()    { return msgAnnounce; }
-    public String getMsgRules()       { return msgRules; }
-    public String getMsgHereWeGo()    { return msgHereWeGo; }
-    public String getMsgRoundStart()  { return msgRoundStart; }
-    public String getMsgScale()       { return msgScale; }
-    public String getMsgPrompt()      { return msgPrompt; }
-    public String getMsgRoundWinner() { return msgRoundWinner; }
-    public String getMsgWinner()      { return msgWinner; }
-    public String getMsgNoWinner()    { return msgNoWinner; }
-    public String getMsgReward()      { return msgReward; }
-    public String getMsgGuessAck()       { return msgGuessAck; }
-    public String getMsgRoundResult()    { return msgRoundResult; }
-    public String getMsgTieContinues()   { return msgTieContinues; }
-    public String getMsgTieEliminated()  { return msgTieEliminated; }
-    public String getMsgTieAdvanced()    { return msgTieAdvanced; }
-    public String getMsgMultipleWinners(){ return msgMultipleWinners; }
-    public String getMsgRound2Start()    { return msgRound2Start; }
-    public String getMsgFinalRound()     { return msgFinalRound; }
-    public String getMsgStopped()        { return msgStopped; }
-    public String getMsgCountdown()      { return msgCountdown; }
-    public String getMsgGuessingOver()   { return msgGuessingOver; }
-    public String getMsgRewardMultiple() { return msgRewardMultiple; }
+    public String getRewardCommand()       { return rewardCommand; }
+    public String getMsgBannerTop()        { return msgBannerTop; }
+    public String getMsgBannerBottom()     { return msgBannerBottom; }
+    public String getMsgAnnounce()         { return msgAnnounce; }
+    public String getMsgRules()            { return msgRules; }
+    public String getMsgHereWeGo()         { return msgHereWeGo; }
+    public String getMsgScale()            { return msgScale; }
+    public String getMsgPrompt()           { return msgPrompt; }
+    public String getMsgRoundResultSingle(){ return msgRoundResultSingle; }
+    public String getMsgRoundResultTie()   { return msgRoundResultTie; }
+    public String getMsgGuessingOver()     { return msgGuessingOver; }
+    public String getMsgCountdown()        { return msgCountdown; }
+    public String getMsgRound2Start()      { return msgRound2Start; }
+    public String getMsgFinalRound()       { return msgFinalRound; }
+    public String getMsgTieEliminated()    { return msgTieEliminated; }
+    public String getMsgTieAdvanced()      { return msgTieAdvanced; }
+    public String getMsgWinner()           { return msgWinner; }
+    public String getMsgMultipleWinners()  { return msgMultipleWinners; }
+    public String getMsgNoWinner()         { return msgNoWinner; }
+    public String getMsgReward()           { return msgReward; }
+    public String getMsgRewardMultiple()   { return msgRewardMultiple; }
+    public String getMsgGuessAck()         { return msgGuessAck; }
+    public String getMsgStopped()          { return msgStopped; }
 
     // -----------------------------------------------------------------------
-    // Message formatting helpers
+    // Format helpers
     // -----------------------------------------------------------------------
 
     /**
-     * Substitutes all Wavelength-specific placeholders in {@code template}:
-     * {@code %round%}, {@code %player%}, {@code %guess%}, {@code %target%},
-     * {@code %scale_min%}, {@code %scale_max%}, {@code %prompt%}.
-     *
-     * <p>Pass {@code null} or {@code -1} to skip individual substitutions.
+     * Substitutes all Wavelength placeholders in {@code template}.
+     * Pass {@code null} or {@code -1} to skip individual substitutions.
      */
     public static String format(
             final String template,
@@ -327,9 +244,6 @@ public final class WavelengthConfig {
         return format(template, round, player, guess, target, scaleMin, scaleMax, prompt, null, null);
     }
 
-    /**
-     * Full format method including {@code %average%} and {@code %players%}.
-     */
     public static String format(
             final String template,
             final int round,

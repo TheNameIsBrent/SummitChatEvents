@@ -29,6 +29,8 @@ public final class PluginConfig {
     private final int    countMinDuration;
     private final int    countMaxDuration;
     private final String countRewardCommand;
+    private final String countMsgBannerTop;
+    private final String countMsgBannerBottom;
     private final String countMsgAnnounce;
     private final String countMsgRules;
     private final String countMsgHereWeGo;
@@ -60,12 +62,16 @@ public final class PluginConfig {
         countMaxDuration   = cfg.getInt("events.count.max-duration", 90);
         countRewardCommand = cfg.getString("events.count.reward-command", "");
 
-        countMsgAnnounce  = msg(cfg, rawPrefix, "events.count.messages.announce",
-                "%prefix%&e&lA Count Up event is about to begin! Get ready!");
+        countMsgBannerTop    = msg(cfg, rawPrefix, "events.count.messages.banner-top",
+                "&6&m        &r &e&l   COUNT UP EVENT   &r &6&m        ");
+        countMsgBannerBottom = msg(cfg, rawPrefix, "events.count.messages.banner-bottom",
+                "&6&m==============================");
+        countMsgAnnounce     = msg(cfg, rawPrefix, "events.count.messages.announce",
+                "&e&lA counting event is starting!");
         countMsgRules     = msg(cfg, rawPrefix, "events.count.messages.rules",
-                "%prefix%&7How it works: &fType the next number. No two in a row!");
+                "&7Type the next number in chat. &fYou can't go twice in a row!");
         countMsgHereWeGo  = msg(cfg, rawPrefix, "events.count.messages.here-we-go",
-                "%prefix%&a&lHere we go!");
+                "&a&lHere we go!");
         countMsgWinner    = msg(cfg, rawPrefix, "events.count.messages.winner",
                 "%prefix%&aEvent over! &eWinner: &6&l%player% &awith &e%number%&a!");
         countMsgNoWinner  = msg(cfg, rawPrefix, "events.count.messages.no-winner",
@@ -101,7 +107,9 @@ public final class PluginConfig {
     public int    getCountMinDuration()   { return countMinDuration; }
     public int    getCountMaxDuration()   { return countMaxDuration; }
     public String getCountRewardCommand() { return countRewardCommand; }
-    public String getCountMsgAnnounce()   { return countMsgAnnounce; }
+    public String getCountMsgBannerTop()    { return countMsgBannerTop; }
+    public String getCountMsgBannerBottom() { return countMsgBannerBottom; }
+    public String getCountMsgAnnounce()     { return countMsgAnnounce; }
     public String getCountMsgRules()      { return countMsgRules; }
     public String getCountMsgHereWeGo()   { return countMsgHereWeGo; }
     public String getCountMsgWinner()     { return countMsgWinner; }
