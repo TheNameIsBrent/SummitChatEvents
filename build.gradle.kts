@@ -36,9 +36,14 @@ tasks {
         }
     }
 
+    // Disable the plain jar — shadowJar is the only output we want
+    jar {
+        enabled = false
+    }
+
     shadowJar {
-        archiveClassifier.set("")   // no "-all" suffix
-        archiveBaseName.set("summitchatevents") // → summitchatevents-1.0.0.jar
+        archiveClassifier.set("")                // no "-all" suffix
+        archiveBaseName.set("summitchatevents")  // → summitchatevents-1.0.0.jar
         minimize()
     }
 
