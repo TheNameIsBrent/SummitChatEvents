@@ -76,6 +76,7 @@ public final class WavelengthConfig {
     private final String msgWinnerBannerTop;
     private final String msgWinnerLine;
     private final String msgWinnerPrizeLine;
+    private final String msgWinnerAvgLine;
     private final String msgWinnerBannerBottom;
     private final String msgWinnerMultiLine;
     private final String msgRewardPrivate;
@@ -182,6 +183,8 @@ public final class WavelengthConfig {
                 "<center><gradient:#B400FF:#FF00FF>&l\uD83C\uDFC6 %player% WINS! \uD83C\uDFC6</gradient>");
         msgWinnerPrizeLine    = msg(yaml, rawPrefix, mb + ".winner-prize-line",
                 "<center>&#AAAAAA Prize: %prize%");
+        msgWinnerAvgLine      = msg(yaml, rawPrefix, mb + ".winner-avg-line",
+                "<center>&#AAAAAA Average: %average%");
         msgWinnerBannerBottom = msg(yaml, rawPrefix, mb + ".winner-banner-bottom",
                 "<center><gradient:#FF00FF:#B400FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>");
         msgWinnerMultiLine    = msg(yaml, rawPrefix, mb + ".winner-multi-line",
@@ -245,6 +248,7 @@ public final class WavelengthConfig {
     public String getMsgWinnerBannerTop()    { return msgWinnerBannerTop; }
     public String getMsgWinnerLine()         { return msgWinnerLine; }
     public String getMsgWinnerPrizeLine()    { return msgWinnerPrizeLine; }
+    public String getMsgWinnerAvgLine()      { return msgWinnerAvgLine; }
     public String getMsgWinnerBannerBottom() { return msgWinnerBannerBottom; }
     public String getMsgWinnerMultiLine()    { return msgWinnerMultiLine; }
     public String getMsgRewardPrivate()      { return msgRewardPrivate; }

@@ -80,7 +80,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private final Map<UUID, Integer> guesses       = new HashMap<>();
     private final Set<String>        usedPrompts   = new HashSet<>();
 
-    @Nullable private List<UUID> finalWinners  = null;
+    @Nullable private List<UUID>   finalWinners  = null;
+    @Nullable private String       finalAverage  = null; // average from the deciding round
     /** Set to true by the stop command — suppresses result announcement. */
     private volatile boolean      stoppedByAdmin = false;
 
@@ -173,6 +174,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         }
         usedPrompts.clear();
         finalWinners    = null;
+        finalAverage    = null;
         stoppedByAdmin  = false;
         currentRound    = 0;
         currentScaleMin = currentScaleMax = currentPrompt = "";
@@ -192,10 +194,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             broadcast(wcfg.getMsgPrizeLine().replace("%prize%", prize));
             broadcast(wcfg.getMsgBannerBottom());
         });
-        schedule(T_RULES,           () -> broadcast(wcfg.getMsgRules()));
-        schedule(T_HERE_WE_GO,       () -> broadcast(wcfg.getMsgAreYouReady()));
-        schedule(T_HERE_WE_GO + 40L, () -> broadcast(wcfg.getMsgHereWeGo()));
-        schedule(T_START + 40L,       () -> startRound(null));
+        schedule(T_RULES,  () -> broadcast(wcfg.getMsgRules()));
+        schedule(T_START,  () -> startRound(null));
     }
 
     // -----------------------------------------------------------------------
@@ -233,23 +233,29 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             final long s0 = 0L;
             final long s1 = s0 + T_ROUND_CONTEXT;
             final long s2 = s1 + T_SCALE_TO_PROMPT;
+            final String areYouReadyMsg2 = wcfg.getMsgAreYouReady();
             final long s3 = s2 + T_HERE_WE_GO_ROUND;
             final long s4 = s3 + T_HERE_WE_GO_ROUND;
+            final long s5 = s4 + T_HERE_WE_GO_ROUND;
             schedule(s0, () -> broadcast(contextMessage));
             schedule(s1, () -> broadcast(scaleMsg));
             schedule(s2, () -> broadcast(promptMsg));
-            schedule(s3, () -> broadcast(hereWeGoMsg));
-            schedule(s4, () -> openRound(wcfg));
+            schedule(s3, () -> broadcast(areYouReadyMsg2));
+            schedule(s4, () -> broadcast(hereWeGoMsg));
+            schedule(s5, () -> openRound(wcfg));
         } else {
-            // scale → prompt → here-we-go → open
+            // scale → prompt → are-you-ready → here-we-go → open
+            final String areYouReadyMsg = wcfg.getMsgAreYouReady();
             final long s0 = 0L;
             final long s1 = s0 + T_SCALE_TO_PROMPT;
             final long s2 = s1 + T_HERE_WE_GO_ROUND;
             final long s3 = s2 + T_HERE_WE_GO_ROUND;
+            final long s4 = s3 + T_HERE_WE_GO_ROUND;
             schedule(s0, () -> broadcast(scaleMsg));
             schedule(s1, () -> broadcast(promptMsg));
-            schedule(s2, () -> broadcast(hereWeGoMsg));
-            schedule(s3, () -> openRound(wcfg));
+            schedule(s2, () -> broadcast(areYouReadyMsg));
+            schedule(s3, () -> broadcast(hereWeGoMsg));
+            schedule(s4, () -> openRound(wcfg));
         }
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
@@ -293,7 +299,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         // ── No guesses ───────────────────────────────────────────────────────
         if (snap.isEmpty()) {
             getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound + " — no guesses.");
-            concludeEvent(Collections.emptyList()); // onStop will broadcast no-winner
+            concludeEvent(Collections.emptyList(), null); // onStop will broadcast no-winner
             return;
         }
 
@@ -336,18 +342,27 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                     -1, null, -1, -1, null, null, null, avgDisplay, tiedStr);
         }
 
-        // Dramatic build-up then result
+        // Dramatic build-up — show result only for tie-continue cases
+        // For game-ending (tied.size() <= 2), the announceWinners banner handles it
         broadcast(wcfg.getMsgGuessingOver());
-        schedule(T_REVEAL_BUILDUP, () -> broadcast(resultMsg));
+        final boolean isContinuing = tied.size() > 2 && currentRound < MAX_ROUNDS;
+        if (isContinuing) {
+            schedule(T_REVEAL_BUILDUP, () -> broadcast(resultMsg));
+        }
 
         getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound
                 + " — avg=" + exactAvg + " minDelta=" + minDelta + " tied=" + tied.size());
 
         // ── Outcome logic ─────────────────────────────────────────────────────
-        final long baseDelay = T_REVEAL_BUILDUP + 20L; // after result message
+        final long baseDelay = (tied.size() > 2 && currentRound < MAX_ROUNDS)
+                ? T_REVEAL_BUILDUP + 20L  // after result message (tie-continue)
+                : T_REVEAL_BUILDUP;       // just after "here comes..." (game-ending)
 
         if (tied.size() <= 2) {
-            schedule(baseDelay, () -> concludeEvent(tied));
+            // For single winner or 2-player tie ending the game:
+            // pass avgDisplay so the final banner can show it
+            final String capturedAvg = avgDisplay;
+            schedule(baseDelay, () -> concludeEvent(tied, capturedAvg));
 
         } else if (currentRound < MAX_ROUNDS) {
             // 3+ tied — narrow to tied players, continue
@@ -382,13 +397,15 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
         } else {
             // Final round, 3+ tied — all win together
-            schedule(baseDelay, () -> concludeEvent(tied));
+            final String capturedAvg2 = avgDisplay;
+            schedule(baseDelay, () -> concludeEvent(tied, capturedAvg2));
         }
     }
 
-    /** Sets final winners and schedules the manager stop. */
-    private void concludeEvent(final @NotNull List<UUID> winners) {
+    /** Sets final winners and average, then schedules the manager stop. */
+    private void concludeEvent(final @NotNull List<UUID> winners, final @Nullable String average) {
         finalWinners = new ArrayList<>(winners);
+        finalAverage = average;
         Bukkit.getScheduler().runTaskLater(getPlugin(),
                 () -> getPlugin().getEventManager().stopCurrentEvent(), 40L);
     }
@@ -475,7 +492,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         final String ack = WavelengthConfig.format(
                 getPlugin().getPluginConfig().getWavelengthConfig().getMsgGuessAck(),
                 -1, null, guess, -1, null, null, null);
-        Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(ack));
+        Bukkit.getScheduler().runTask(getPlugin(), () -> player.sendMessage(PluginConfig.broadcast(ack)));
     }
 
     // -----------------------------------------------------------------------
@@ -511,12 +528,16 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     private void announceWinners(final WavelengthConfig wcfg, final List<UUID> winners) {
-        final String prize = wcfg.getRewardDisplayName();
+        final String prize   = wcfg.getRewardDisplayName();
+        final String average = finalAverage != null ? finalAverage : "";
         broadcast(wcfg.getMsgWinnerBannerTop());
         if (winners.size() == 1) {
             broadcast(wcfg.getMsgWinnerLine().replace("%player%", resolvePlayerName(winners.get(0))));
         } else {
             broadcast(wcfg.getMsgWinnerMultiLine().replace("%players%", buildNameList(winners)));
+        }
+        if (!average.isEmpty()) {
+            broadcast(wcfg.getMsgWinnerAvgLine().replace("%average%", average));
         }
         broadcast(wcfg.getMsgWinnerPrizeLine().replace("%prize%", prize));
         broadcast(wcfg.getMsgWinnerBannerBottom());
@@ -533,7 +554,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
             }
             final Player p = Bukkit.getPlayer(uuid);
             if (p != null) {
-                p.sendMessage(wcfg.getMsgRewardPrivate().replace("%prize%", prize));
+                p.sendMessage(PluginConfig.broadcast(wcfg.getMsgRewardPrivate().replace("%prize%", prize)));
             }
         }
     }

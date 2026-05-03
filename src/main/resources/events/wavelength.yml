@@ -8,7 +8,7 @@ min-players: 3
 
 reward:
   command:      "give %player% emerald 3"
-  display-name: "&#a9ffa93x Emerald"
+  display-name: "&#a9ffa9 3x Emerald"
 
 rounds:
   round1-duration: 15
@@ -48,25 +48,34 @@ messages:
   announce:      "<center><gradient:#B400FF:#FF00FF>&lWAVELENGTH EVENT</gradient>"
   prize-line:    "<center>&#AAAAAA Prize: %prize%"
   banner-bottom: "<center><gradient:#FF00FF:#B400FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
-  rules:         "<center>&#AAAAAA Place the prompt on the scale. &#FF6B6BType 0-100."
+  rules:         "<center>&#AAAAAA Place the prompt on the scale. Type 0-100."
   are-you-ready: "<center>&#AAAAAA Are you ready?"
   here-we-go:    "<center><gradient:#00FF87:#00CFFF>&lHere we go!</gradient>"
-  scale:         "%prefix%&#AAAAAA Scale: <gradient:#FF00FF:#B400FF>&l%scale_min%</gradient> &#FFFFFF to <gradient:#B400FF:#FF00FF>&l%scale_max%</gradient>"
+
+  scale:         "<center><gradient:#FF00FF:#B400FF>&l%scale_min%</gradient> &#FFFFFF to <gradient:#B400FF:#FF00FF>&l%scale_max%</gradient>"
   prompt:        "<center><gradient:#FF00FF:#B400FF>&l%prompt%</gradient>"
-  round-2-start:   "%prefix%<gradient:#FFD700:#FF8C00>&lTie!</gradient> &eRound 2 — only these players continue: &6%players%"
-  final-round:     "%prefix%<gradient:#FF4444:#FF0000>&lFinal Round!</gradient> &eLast chance — remaining: &6%players%"
+
+  round-2-start:   "%prefix%<gradient:#FFD700:#FF8C00>&lTie!</gradient> &eRound 2 - only these players continue: &6%players%"
+  final-round:     "%prefix%<gradient:#FF4444:#FF0000>&lFinal Round!</gradient> &eLast chance - remaining: &6%players%"
+
+  # Shown when 3+ players tie and the game continues to another round
   round-result-single: "%prefix%<gradient:#FFD700:#FF8C00>&lWinner:</gradient> &6&l%player% &#AAAAAA(average &#FFD700%average%&#AAAAAA)"
-  round-result-tie:    "%prefix%<gradient:#FF4444:#FF8C00>&lIt's a tie!</gradient> &e%players% &#AAAAAA(average &#FFD700%average%&#AAAAAA)"
+  round-result-tie:    "%prefix%<gradient:#FF4444:#FF8C00>&lTie!</gradient> &e%players% &#AAAAAA(average &#FFD700%average%&#AAAAAA)"
+
   guessing-over:   "<center><gradient:#FFD700:#FF8C00>&lOhhh, lots of guesses! Here comes the result...</gradient>"
+
   tie-eliminated:  "%prefix%&#FF4444You have been eliminated!"
   tie-advanced:    "%prefix%&#00FF87You advanced to the next round!"
-  no-winner:       "%prefix%&cThe event ended &7— &cnobody scored!"
+  no-winner:       "%prefix%&cThe event ended - nobody scored!"
+
+  # Final winner announcement
   winner-banner-top:    "<center><gradient:#B400FF:#FF00FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
   winner-line:          "<center><gradient:#B400FF:#FF00FF>&l%player% WINS!</gradient>"
+  winner-multi-line:    "<center><gradient:#B400FF:#FF00FF>&l%players% WIN!</gradient>"
+  winner-avg-line:      "<center>&#AAAAAA Average: &#FFD700%average%"
   winner-prize-line:    "<center>&#AAAAAA Prize: %prize%"
   winner-banner-bottom: "<center><gradient:#FF00FF:#B400FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
-  winner-multi-line:    "<center><gradient:#B400FF:#FF00FF>&l%players% WIN!</gradient>"
-  multiple-winners:     "%prefix%<gradient:#B400FF:#FF00FF>&lAll tied players win!</gradient>"
-  guess-ack:       "%prefix%&#AAAAAA Your guess &#FFD700%guess%&#AAAAAA has been recorded!"
+
+  guess-ack:       "&#AAAAAA Your guess &#FFD700%guess%&#AAAAAA has been recorded!"
   countdown:       "%prefix%&#FF6B6B%seconds%s remaining!"
-  reward-private:  "%prefix%<gradient:#B400FF:#FF00FF>&lCongratulations!</gradient> &eYou won %prize%&e!"
+  reward-private:  "<gradient:#B400FF:#FF00FF>&lCongratulations!</gradient> &eYou won %prize%&e!"

@@ -24,4 +24,4 @@ messages:
   winner-line:          "<center><gradient:#FFD700:#FFA500>&l%player% WINS!</gradient>"
   winner-prize-line:    "<center>&#AAAAAA Prize: %prize%"
   winner-banner-bottom: "<center><gradient:#FF8C00:#FFD700>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
-  reward-private: "%prefix%<gradient:#FFD700:#FF8C00>&lCongratulations!</gradient> &eYou won %prize%&e!"
+  reward-private: "<gradient:#FFD700:#FF8C00>&lCongratulations!</gradient> &eYou won %prize%&e!"
