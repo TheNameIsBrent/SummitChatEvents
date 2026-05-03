@@ -63,7 +63,7 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
     private static final long T_RULES           = 60L;  // 3 s after announce
     private static final long T_HERE_WE_GO      = 120L; // 3 s after rules
-    private static final long T_START           = 160L; // 2 s after here-we-go
+    private static final long T_START           = 100L; // 2 s after rules
     private static final long T_ROUND_CONTEXT   = 40L;  // 2 s between context and scale
     private static final long T_SCALE_TO_PROMPT = 30L;  // 1.5 s
     private static final long T_PROMPT_TO_OPEN  = 20L;  // 1 s

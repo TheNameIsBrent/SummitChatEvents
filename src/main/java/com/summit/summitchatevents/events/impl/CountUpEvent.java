@@ -325,8 +325,8 @@ public final class CountUpEvent extends ChatEvent implements Listener {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), resolved);
             final Player wp = Bukkit.getPlayerExact(winnerName);
             if (wp != null) {
-                wp.sendMessage(cfg.getMsgRewardPrivate()
-                        .replace("%prize%", cfg.getRewardDisplayName()));
+                wp.sendMessage(PluginConfig.broadcast(
+                        cfg.getMsgRewardPrivate().replace("%prize%", cfg.getRewardDisplayName())));
             }
             getPlugin().getLogger().info(
                     "[CountUpEvent] Reward dispatched for " + winnerName + ": " + resolved);
