@@ -140,7 +140,7 @@ public final class HeadsOrTailsEvent extends ChatEvent implements Listener {
                 final UUID    winnerUuid = remaining.iterator().next();
                 final Player  winner     = Bukkit.getPlayer(winnerUuid);
                 final String  name       = winner != null ? winner.getName() : winnerUuid.toString();
-                Bukkit.broadcastMessage(cfg.getMsgWinner().replace("%player%", name));
+                announceWinner(cfg, name);
                 runRewardCommand(cfg, name);
             } else {
                 Bukkit.broadcastMessage(cfg.getMsgNoWinner());
@@ -297,11 +297,24 @@ public final class HeadsOrTailsEvent extends ChatEvent implements Listener {
     // Helpers — main thread
     // -----------------------------------------------------------------------
 
+    private void announceWinner(final HeadsOrTailsConfig cfg, final String winnerName) {
+        final String prize = cfg.getRewardDisplayName();
+        Bukkit.broadcastMessage(cfg.getMsgWinnerBannerTop());
+        Bukkit.broadcastMessage(cfg.getMsgWinnerLine().replace("%player%", winnerName));
+        Bukkit.broadcastMessage(cfg.getMsgWinnerPrizeLine().replace("%prize%", prize));
+        Bukkit.broadcastMessage(cfg.getMsgWinnerBannerBottom());
+    }
+
     private void runRewardCommand(final HeadsOrTailsConfig cfg, final String winnerName) {
         final String cmd = cfg.getRewardCommand();
-        if (cmd == null || cmd.isBlank()) return;
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", winnerName));
-        getPlugin().getLogger().info("[HeadsOrTailsEvent] Reward dispatched for " + winnerName);
+        if (cmd != null && !cmd.isBlank()) {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", winnerName));
+            getPlugin().getLogger().info("[HeadsOrTailsEvent] Reward dispatched for " + winnerName);
+        }
+        final Player wp = Bukkit.getPlayerExact(winnerName);
+        if (wp != null) {
+            wp.sendMessage(cfg.getMsgRewardPrivate().replace("%prize%", cfg.getRewardDisplayName()));
+        }
     }
 
     private void schedule(final long delayTicks, final Runnable task) {

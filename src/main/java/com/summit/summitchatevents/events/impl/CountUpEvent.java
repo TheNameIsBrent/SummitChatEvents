@@ -140,7 +140,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
 
         HandlerList.unregisterAll(this);
 
-        final PluginConfig cfg    = getPlugin().getPluginConfig();
+        final CountUpConfig cfg   = getPlugin().getPluginConfig().getCountUpConfig();
         final int          count  = Math.max(currentNumber.get() - 1, 0);
         final String       winner = lastPlayerName.get();
 
@@ -186,9 +186,9 @@ public final class CountUpEvent extends ChatEvent implements Listener {
 
         broadcastStyledNumber(1);  // null sender = server
 
-        final PluginConfig cfg    = getPlugin().getPluginConfig();
-        final int          minSec = cfg.getMinDuration();
-        final int          maxSec = cfg.getMaxDuration();
+        final CountUpConfig cfg   = getPlugin().getPluginConfig().getCountUpConfig();
+        final int           minSec = cfg.getMinDuration();
+        final int           maxSec = cfg.getMaxDuration();
         final int          durSec = minSec + random.nextInt(Math.max(maxSec - minSec + 1, 1));
 
         schedule((long) durSec * 20L, () -> {

@@ -85,10 +85,9 @@ public final class WavelengthConfig {
     // -----------------------------------------------------------------------
 
     public WavelengthConfig(final FileConfiguration yaml, final String rawPrefix, final Logger log) {
-        final ConfigurationSection root = yaml.getConfigurationSection(base);
-
-        minPlayers    = yaml.getInt("min-players", 3);
-        rewardCommand = yaml.getString(base + ".reward-command", "");
+        minPlayers       = yaml.getInt("min-players", 3);
+        rewardCommand    = yaml.getString("reward.command", "");
+        rewardDisplayName = msg(yaml, rawPrefix, "reward.display-name", "&#FFD700a prize");
 
         // ── Round durations ────────────────────────────────────────────────
         final List<Long> durations = new ArrayList<>();
@@ -183,10 +182,6 @@ public final class WavelengthConfig {
                 "<center><gradient:#B400FF:#FF00FF>&l\uD83C\uDFC6 %players% WIN! \uD83C\uDFC6</gradient>");
         msgRewardPrivate      = msg(yaml, rawPrefix, mb + ".reward-private",
                 "%prefix%<gradient:#B400FF:#FF00FF>&lCongratulations!</gradient> &eYou won %prize%&e!");
-        msgReward            = msg(yaml, rawPrefix, mb + ".reward",
-                "%prefix%&6%player% &ehas been rewarded!");
-        msgRewardMultiple    = msg(yaml, rawPrefix, mb + ".reward-multiple",
-                "%prefix%&6%players% &ehave all been rewarded!");
         msgGuessAck          = msg(yaml, rawPrefix, mb + ".guess-ack",
                 "%prefix%&7Your guess &e%guess%&7 has been recorded!");
         msgStopped           = msg(yaml, rawPrefix, mb + ".stopped",
@@ -237,10 +232,14 @@ public final class WavelengthConfig {
     public String getMsgWinner()           { return msgWinner; }
     public String getMsgMultipleWinners()  { return msgMultipleWinners; }
     public String getMsgNoWinner()         { return msgNoWinner; }
-    public String getMsgReward()           { return msgReward; }
-    public String getMsgRewardMultiple()   { return msgRewardMultiple; }
     public String getMsgGuessAck()         { return msgGuessAck; }
     public String getMsgStopped()          { return msgStopped; }
+    public String getMsgWinnerBannerTop()    { return msgWinnerBannerTop; }
+    public String getMsgWinnerLine()         { return msgWinnerLine; }
+    public String getMsgWinnerPrizeLine()    { return msgWinnerPrizeLine; }
+    public String getMsgWinnerBannerBottom() { return msgWinnerBannerBottom; }
+    public String getMsgWinnerMultiLine()    { return msgWinnerMultiLine; }
+    public String getMsgRewardPrivate()      { return msgRewardPrivate; }
 
     // -----------------------------------------------------------------------
     // Format helpers
