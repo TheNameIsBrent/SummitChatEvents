@@ -169,15 +169,17 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     private void scheduleIntro() {
         final CountUpConfig cfg = getPlugin().getPluginConfig().getCountUpConfig();
 
-        // Big centred banner
         schedule(0L, () -> {
             broadcast(cfg.getMsgBannerTop());
             broadcast(cfg.getMsgAnnounce());
+            final String prize = cfg.getRewardDisplayName();
+            broadcast(cfg.getMsgPrizeLine().replace("%prize%", prize));
             broadcast(cfg.getMsgBannerBottom());
         });
-        schedule(T_RULES,      () -> broadcast(cfg.getMsgRules()));
-        schedule(T_HERE_WE_GO, () -> broadcast(cfg.getMsgHereWeGo()));
-        schedule(T_GO_LIVE,    this::goLive);
+        schedule(T_RULES,           () -> broadcast(cfg.getMsgRules()));
+        schedule(T_HERE_WE_GO,       () -> broadcast(cfg.getMsgAreYouReady()));
+        schedule(T_HERE_WE_GO + 40L, () -> broadcast(cfg.getMsgHereWeGo()));
+        schedule(T_GO_LIVE + 40L,    this::goLive);
     }
 
     private void goLive() {
@@ -342,7 +344,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     }
 
     private void broadcast(final String message) {
-        Bukkit.broadcastMessage(message);
+        Bukkit.broadcastMessage(PluginConfig.broadcast(message));
     }
 
     private void schedule(final long delayTicks, final Runnable task) {

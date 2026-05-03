@@ -6,46 +6,35 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Processes config message strings into final § -coded Minecraft chat lines.
+ * Two-phase message processing pipeline.
  *
- * <h3>Supported syntax</h3>
- * <ul>
- *   <li>{@code &x} — legacy colour/format codes (translated last)</li>
- *   <li>{@code &#RRGGBB} or {@code <#RRGGBB>} — true hex colour</li>
- *   <li>{@code <gradient:#RRGGBB:#RRGGBB>text</gradient>} — smooth colour gradient</li>
- *   <li>{@code <center>rest of line} — centre the remainder of the line in chat</li>
- * </ul>
+ * <h3>Phase 1 — at config load ({@link #translateCodes})</h3>
+ * Only translates {@code &x} legacy codes to § equivalents.
+ * Placeholders ({@code %player%} etc.) and formatting tags
+ * ({@code <gradient>}, {@code <center>}) are left untouched so they survive
+ * until runtime values are known.
  *
- * <h3>Processing order</h3>
+ * <h3>Phase 2 — at broadcast time ({@link #process})</h3>
+ * Called after all {@code %placeholder%} values have been substituted into
+ * the string. Runs in this order:
  * <ol>
- *   <li>Detect {@code <center>} prefix and strip it.</li>
- *   <li>Expand {@code <gradient>} tags, writing per-character hex codes.</li>
- *   <li>Translate {@code &#RRGGBB} / {@code <#RRGGBB>} to § hex sequences.</li>
- *   <li>Translate {@code &x} legacy codes.</li>
- *   <li>If centring, compute visible pixel width and prepend the right number of spaces.</li>
+ *   <li>Detect and strip {@code <center>}.</li>
+ *   <li>Translate {@code &x} codes still present (e.g. from runtime values).</li>
+ *   <li>Expand {@code <gradient:#RRGGBB:#RRGGBB>text</gradient>} tags,
+ *       applying per-character hex colours.</li>
+ *   <li>Translate {@code &#RRGGBB} / {@code <#RRGGBB>} hex shortcuts.</li>
+ *   <li>If centring, compute pixel width and prepend spaces.</li>
  * </ol>
  *
  * <h3>Centering math</h3>
- * Minecraft's default chat viewport is 320 pixels wide. Each character
- * contributes a known pixel width (bold adds +1 per char). We sum widths
- * of the visible (non-code) characters, then prepend
- * {@code floor((320 - textWidth) / 2 / SPACE_WIDTH)} regular spaces.
- * A space is 4 px wide (regular), 5 px bold — we always use regular spaces
- * for the padding because bold spaces look identical to regular spaces in chat.
+ * Chat box = 320 px. Each character has a known pixel width; bold adds 1 px.
+ * Padding = {@code floor((320 - textWidth) / 2 / 4)} regular spaces (4 px each).
  */
 public final class MessageFormatter {
 
-    // -----------------------------------------------------------------------
-    // Constants
-    // -----------------------------------------------------------------------
-
-    /** Total pixel width of the default Minecraft chat box. */
-    private static final int CHAT_WIDTH_PX = 320;
-
-    /** Width of one regular space character in pixels. */
+    private static final int CHAT_WIDTH_PX  = 320;
     private static final int SPACE_WIDTH_PX = 4;
 
-    // Regex patterns
     private static final Pattern GRADIENT_PATTERN = Pattern.compile(
             "<gradient:(#[0-9A-Fa-f]{6}):(#[0-9A-Fa-f]{6})>(.*?)</gradient>",
             Pattern.DOTALL
@@ -53,39 +42,49 @@ public final class MessageFormatter {
     private static final Pattern HEX_AMPERSAND = Pattern.compile("&#([0-9A-Fa-f]{6})");
     private static final Pattern HEX_ANGLE     = Pattern.compile("<#([0-9A-Fa-f]{6})>");
 
-    // -----------------------------------------------------------------------
-    // Public API
-    // -----------------------------------------------------------------------
-
     private MessageFormatter() {}
 
+    // -----------------------------------------------------------------------
+    // Phase 1 — config load
+    // -----------------------------------------------------------------------
+
     /**
-     * Processes a raw config string into a final, ready-to-broadcast chat line.
-     *
-     * @param raw the raw string from config (may contain {@code <center>},
-     *            gradient tags, hex codes, and {@code &} codes)
-     * @return the processed string with § codes
+     * Translates {@code &x} codes to § equivalents.
+     * Does NOT expand gradients or apply centering — those require
+     * runtime values to already be substituted.
+     */
+    public static @NotNull String translateCodes(final @NotNull String raw) {
+        return translateLegacy(raw);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2 — broadcast time (after placeholder substitution)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Full processing: center detection → legacy codes → gradients → hex → centering.
+     * Call this on strings that already have all {@code %placeholder%} values filled in.
      */
     public static @NotNull String process(final @NotNull String raw) {
         boolean centre = false;
         String s = raw;
 
-        // 1. Detect and strip <center> tag (case-insensitive, must be at the start)
+        // 1. Detect <center>
         if (s.regionMatches(true, 0, "<center>", 0, 8)) {
             centre = true;
             s = s.substring(8);
         }
 
-        // 2. Expand gradient tags
-        s = applyGradients(s);
-
-        // 3. Translate &#RRGGBB → §x§R§R§G§G§B§B
-        s = applyHexColours(s);
-
-        // 4. Translate &x legacy codes
+        // 2. Translate any remaining &x codes (including those from runtime values)
         s = translateLegacy(s);
 
-        // 5. Centre if requested
+        // 3. Expand gradients (now that §l etc. are real § codes)
+        s = applyGradients(s);
+
+        // 4. Translate hex shortcuts
+        s = applyHexColours(s);
+
+        // 5. Centre
         if (centre) {
             s = centre(s);
         }
@@ -94,44 +93,47 @@ public final class MessageFormatter {
     }
 
     // -----------------------------------------------------------------------
-    // Step implementations
+    // Gradient expansion
     // -----------------------------------------------------------------------
 
-    /**
-     * Expands {@code <gradient:#RRGGBB:#RRGGBB>text</gradient>} tags.
-     * Each visible character in {@code text} receives its own interpolated
-     * hex colour code. Existing § codes inside the text are preserved.
-     */
     static String applyGradients(final String input) {
         final Matcher m = GRADIENT_PATTERN.matcher(input);
         final StringBuffer sb = new StringBuffer();
 
         while (m.find()) {
-            final int[]  from  = hexToRgb(m.group(1));
-            final int[]  to    = hexToRgb(m.group(2));
-            final String text  = m.group(3);
+            final int[]  from = hexToRgb(m.group(1));
+            final int[]  to   = hexToRgb(m.group(2));
+            final String text = m.group(3);
 
-            // Count only visible (non-§-code) characters for interpolation steps
+            // Count visible chars for interpolation (skip § code pairs and their letter)
             final String stripped = stripCodes(text);
             final int    len      = Math.max(stripped.length(), 1);
 
             final StringBuilder coloured = new StringBuilder();
+            // Track active format codes (bold, italic etc.) to re-apply after each hex code
+            String activeFormats = "";
             int visIdx = 0;
 
             for (int i = 0; i < text.length(); i++) {
                 final char c = text.charAt(i);
 
                 if (c == '\u00a7' && i + 1 < text.length()) {
-                    // Pass through existing § codes unchanged
-                    coloured.append(c).append(text.charAt(i + 1));
+                    final char code = text.charAt(i + 1);
+                    // Accumulate format codes; clear on colour reset
+                    if (code == 'r') {
+                        activeFormats = "";
+                    } else if ("klmno".indexOf(Character.toLowerCase(code)) >= 0) {
+                        activeFormats += "\u00a7" + code;
+                    }
+                    coloured.append('\u00a7').append(code);
                     i++;
                 } else {
-                    // Interpolate colour for this visible character
-                    final float t   = len == 1 ? 0f : (float) visIdx / (len - 1);
-                    final int   r   = lerp(from[0], to[0], t);
-                    final int   g   = lerp(from[1], to[1], t);
-                    final int   b   = lerp(from[2], to[2], t);
-                    coloured.append(toHexCode(r, g, b)).append(c);
+                    final float t = len == 1 ? 0f : (float) visIdx / (len - 1);
+                    final int r = lerp(from[0], to[0], t);
+                    final int g = lerp(from[1], to[1], t);
+                    final int b = lerp(from[2], to[2], t);
+                    // Emit hex colour, re-apply any active format codes (e.g. §l for bold)
+                    coloured.append(toHexCode(r, g, b)).append(activeFormats).append(c);
                     visIdx++;
                 }
             }
@@ -142,24 +144,20 @@ public final class MessageFormatter {
         return sb.toString();
     }
 
-    /**
-     * Translates {@code &#RRGGBB} and {@code <#RRGGBB>} to the
-     * {@code §x§R§R§G§G§B§B} format recognised by Paper/Spigot 1.16+.
-     */
+    // -----------------------------------------------------------------------
+    // Hex colour translation
+    // -----------------------------------------------------------------------
+
     static String applyHexColours(final String input) {
-        // Handle &#RRGGBB
-        String s = HEX_AMPERSAND.matcher(input).replaceAll(mr ->
-                toHexCode(mr.group(1)));
-        // Handle <#RRGGBB>
-        s = HEX_ANGLE.matcher(s).replaceAll(mr ->
-                toHexCode(mr.group(1)));
+        String s = HEX_AMPERSAND.matcher(input).replaceAll(mr -> toHexCode(mr.group(1)));
+        s = HEX_ANGLE.matcher(s).replaceAll(mr -> toHexCode(mr.group(1)));
         return s;
     }
 
-    /**
-     * Translates {@code &x} codes to § codes, honouring the full legacy palette
-     * ({@code 0-9}, {@code a-f}, {@code k-o}, {@code r}).
-     */
+    // -----------------------------------------------------------------------
+    // Legacy code translation
+    // -----------------------------------------------------------------------
+
     static String translateLegacy(final String input) {
         if (input == null) return "";
         final StringBuilder sb = new StringBuilder(input.length());
@@ -178,96 +176,65 @@ public final class MessageFormatter {
         return sb.toString();
     }
 
-    /**
-     * Centres {@code line} (which must already have § codes applied) in the
-     * Minecraft default chat window by prepending the correct number of spaces.
-     *
-     * <p>The algorithm:
-     * <ol>
-     *   <li>Walk the string, skipping {@code §x} code pairs.</li>
-     *   <li>Track whether bold ({@code §l}) is active; bold adds 1 px per char.</li>
-     *   <li>Sum pixel widths of all visible characters.</li>
-     *   <li>Prepend {@code floor((CHAT_WIDTH - textWidth) / 2 / SPACE_WIDTH)} spaces.</li>
-     * </ol>
-     */
+    // -----------------------------------------------------------------------
+    // Centering
+    // -----------------------------------------------------------------------
+
     static String centre(final String line) {
         final int textWidth  = visiblePixelWidth(line);
         final int spaceCount = Math.max(0, (CHAT_WIDTH_PX - textWidth) / 2 / SPACE_WIDTH_PX);
         return " ".repeat(spaceCount) + line;
     }
 
-    // -----------------------------------------------------------------------
-    // Pixel-width measurement
-    // -----------------------------------------------------------------------
-
-    /**
-     * Computes the pixel width of the visible (non-code) characters in a
-     * § -coded string, accounting for bold.
-     */
     static int visiblePixelWidth(final String coded) {
-        int  total = 0;
+        int total = 0;
         boolean bold = false;
-
         for (int i = 0; i < coded.length(); i++) {
             final char c = coded.charAt(i);
             if (c == '\u00a7' && i + 1 < coded.length()) {
                 final char code = Character.toLowerCase(coded.charAt(i + 1));
                 if (code == 'l') bold = true;
-                // reset bold on colour codes and §r
-                else if (code == 'r' || (code >= '0' && code <= '9')
-                        || (code >= 'a' && code <= 'f')) {
-                    bold = false;
-                }
-                i++; // skip the code char
+                else if (code == 'r' || (code >= '0' && code <= '9') || (code >= 'a' && code <= 'f')) bold = false;
+                i++;
             } else {
-                // §x hex codes produced by toHexCode() are 14 chars: §x§r§r§g§g§b§b
-                // They are already in the string as raw §-chars; handle them as a unit.
-                // Actually toHexCode emits 14 chars of §-codes with no visible char —
-                // the visible char immediately follows the code. So treat §-pairs normally.
                 total += charWidth(c, bold);
             }
         }
         return total;
     }
 
-    /**
-     * Returns the pixel width of a single Minecraft character.
-     * Bold adds 1 px. Values are based on the default resource pack font.
-     */
     static int charWidth(final char c, final boolean bold) {
         final int base;
-        if (c == ' ')                                           base = 4;
-        else if ("!(),.:;`i|".indexOf(c) >= 0)                base = 2;  // 1px + 1 gap
-        else if ("\"*ftl{}".indexOf(c) >= 0)                   base = 4;
-        else if ("@~".indexOf(c) >= 0)                         base = 7;
-        else if ("[\\]".indexOf(c) >= 0)                       base = 4;
-        else if (c >= 'A' && c <= 'Z') {
-            // Most uppercase are 6px; some are wider
-            if ("IFJM".indexOf(c) >= 0)       base = c == 'M' ? 7 : (c == 'I' ? 4 : 5);
-            else                               base = 6;
-        }
-        else if (c >= '0' && c <= '9')                        base = 6;
-        else                                                   base = 6; // most lowercase + misc
+        if (c == ' ')                             base = 4;
+        else if ("!,.:;`|".indexOf(c) >= 0)      base = 2;
+        else if ("\"*()\u2502".indexOf(c) >= 0)  base = 4;
+        else if ("ft".indexOf(c) >= 0)            base = 4;
+        else if ("il".indexOf(c) >= 0)            base = 2;
+        else if ("@~".indexOf(c) >= 0)            base = 7;
+        else if (c == 'M' || c == 'W')            base = 7;
+        else if (c == 'm' || c == 'w')            base = 7;
+        else if (c == 'I')                        base = 4;
+        else if (c >= 'A' && c <= 'Z')            base = 6;
+        else if (c >= '0' && c <= '9')            base = 6;
+        else if ("\u2500\u2501\u2550\u254c\u254d\u2574\u2578\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588".indexOf(c) >= 0)
+                                                  base = 9; // Unicode box/block chars
+        else if ("\u2190\u2191\u2192\u2193\u2194".indexOf(c) >= 0) base = 7;
+        else if ("\u2714\u2716\u2718".indexOf(c) >= 0) base = 7;
+        else                                      base = 6;
         return bold ? base + 1 : base;
     }
 
     // -----------------------------------------------------------------------
-    // Hex helpers
+    // Helpers
     // -----------------------------------------------------------------------
 
-    /** Converts a 6-char hex string (no #) to a §x§R§R§G§G§B§B sequence. */
     private static String toHexCode(final String hex) {
-        // §x + §R §R §G §G §B §B  (each nibble as its own §-pair)
         return "\u00a7x"
-                + "\u00a7" + hex.charAt(0)
-                + "\u00a7" + hex.charAt(1)
-                + "\u00a7" + hex.charAt(2)
-                + "\u00a7" + hex.charAt(3)
-                + "\u00a7" + hex.charAt(4)
-                + "\u00a7" + hex.charAt(5);
+                + "\u00a7" + hex.charAt(0) + "\u00a7" + hex.charAt(1)
+                + "\u00a7" + hex.charAt(2) + "\u00a7" + hex.charAt(3)
+                + "\u00a7" + hex.charAt(4) + "\u00a7" + hex.charAt(5);
     }
 
-    /** Converts r, g, b (0-255) to a §x§R§R§G§G§B§B sequence. */
     private static String toHexCode(final int r, final int g, final int b) {
         return toHexCode(String.format("%02x%02x%02x", r, g, b));
     }
@@ -281,19 +248,11 @@ public final class MessageFormatter {
         return Math.round(a + (b - a) * t);
     }
 
-    // -----------------------------------------------------------------------
-    // Code helpers
-    // -----------------------------------------------------------------------
-
-    /** Strips all §x code pairs from a string, returning only visible chars. */
     static String stripCodes(final String s) {
         final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == '\u00a7' && i + 1 < s.length()) {
-                i++; // skip code char
-            } else {
-                sb.append(s.charAt(i));
-            }
+            if (s.charAt(i) == '\u00a7' && i + 1 < s.length()) i++;
+            else sb.append(s.charAt(i));
         }
         return sb.toString();
     }

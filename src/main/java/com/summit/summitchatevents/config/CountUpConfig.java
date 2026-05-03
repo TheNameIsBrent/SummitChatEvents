@@ -18,6 +18,8 @@ public final class CountUpConfig {
     private final String msgAnnounce;
     private final String msgRules;
     private final String msgHereWeGo;
+    private final String msgAreYouReady;
+    private final String msgPrizeLine;
     private final String msgNoWinner;
     private final String msgWinnerBannerTop;
     private final String msgWinnerLine;
@@ -74,6 +76,8 @@ public final class CountUpConfig {
     public String getMsgAnnounce()         { return msgAnnounce; }
     public String getMsgRules()            { return msgRules; }
     public String getMsgHereWeGo()         { return msgHereWeGo; }
+    public String getMsgAreYouReady()      { return msgAreYouReady; }
+    public String getMsgPrizeLine()        { return msgPrizeLine; }
     public String getMsgNoWinner()         { return msgNoWinner; }
     public String getMsgWinnerBannerTop()    { return msgWinnerBannerTop; }
     public String getMsgWinnerLine()         { return msgWinnerLine; }

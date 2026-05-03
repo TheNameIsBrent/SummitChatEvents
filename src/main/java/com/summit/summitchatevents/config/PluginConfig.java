@@ -78,10 +78,18 @@ public final class PluginConfig {
     // -----------------------------------------------------------------------
 
     /**
-     * Processes a config string through {@link MessageFormatter}:
-     * centres ({@code <center>}), gradients, hex colours, and {@code &} codes.
+     * Phase 1 (config load): translates {@code &x} codes to § equivalents.
+     * Gradients, centering, and hex codes are left intact for phase 2.
      */
     public static String color(final String s) {
+        return s == null ? "" : MessageFormatter.translateCodes(s);
+    }
+
+    /**
+     * Phase 2 (broadcast time): call after all %placeholder% values are substituted.
+     * Runs center detection, gradient expansion, hex translation, and centering.
+     */
+    public static String broadcast(final String s) {
         return s == null ? "" : MessageFormatter.process(s);
     }
 

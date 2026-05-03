@@ -17,6 +17,8 @@ public final class HeadsOrTailsConfig {
     private final String msgAnnounce;
     private final String msgRules;
     private final String msgHereWeGo;
+    private final String msgAreYouReady;
+    private final String msgPrizeLine;
     private final String msgChoose;
     private final String msgResult;
     private final String msgEliminated;
@@ -83,6 +85,8 @@ public final class HeadsOrTailsConfig {
     public String getMsgAnnounce()    { return msgAnnounce; }
     public String getMsgRules()       { return msgRules; }
     public String getMsgHereWeGo()    { return msgHereWeGo; }
+    public String getMsgAreYouReady() { return msgAreYouReady; }
+    public String getMsgPrizeLine()   { return msgPrizeLine; }
     public String getMsgChoose()      { return msgChoose; }
     public String getMsgResult()      { return msgResult; }
     public String getMsgEliminated()  { return msgEliminated; }

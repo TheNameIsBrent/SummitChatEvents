@@ -184,14 +184,17 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private void scheduleIntro() {
         final WavelengthConfig wcfg = getPlugin().getPluginConfig().getWavelengthConfig();
 
-        // Big centred banner — two lines, then announce, rules, here-we-go
-        schedule(0L,           () -> {
+        schedule(0L, () -> {
             broadcast(wcfg.getMsgBannerTop());
             broadcast(wcfg.getMsgAnnounce());
+            final String prize = wcfg.getRewardDisplayName();
+            broadcast(wcfg.getMsgPrizeLine().replace("%prize%", prize));
             broadcast(wcfg.getMsgBannerBottom());
         });
-        schedule(T_RULES,  () -> broadcast(wcfg.getMsgRules()));
-        schedule(T_START,  () -> startRound(null));
+        schedule(T_RULES,           () -> broadcast(wcfg.getMsgRules()));
+        schedule(T_HERE_WE_GO,       () -> broadcast(wcfg.getMsgAreYouReady()));
+        schedule(T_HERE_WE_GO + 40L, () -> broadcast(wcfg.getMsgHereWeGo()));
+        schedule(T_START + 40L,       () -> startRound(null));
     }
 
     // -----------------------------------------------------------------------
@@ -288,9 +291,8 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
 
         // ── No guesses ───────────────────────────────────────────────────────
         if (snap.isEmpty()) {
-            broadcast(wcfg.getMsgNoWinner());
             getPlugin().getLogger().info("[WavelengthEvent] Round " + currentRound + " — no guesses.");
-            concludeEvent(Collections.emptyList());
+            concludeEvent(Collections.emptyList()); // onStop will broadcast no-winner
             return;
         }
 
@@ -540,7 +542,9 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 new FixedMetadataValue(getPlugin(), true));
     }
 
-    private void broadcast(final String message) { Bukkit.broadcastMessage(message); }
+    private void broadcast(final String message) {
+        Bukkit.broadcastMessage(PluginConfig.broadcast(message));
+    }
 
     private void schedule(final long delayTicks, final Runnable task) {
         tasks.add(Bukkit.getScheduler().runTaskLater(getPlugin(), task, delayTicks));
@@ -559,7 +563,11 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     private static String resolvePlayerName(@Nullable final UUID uuid) {
         if (uuid == null) return "Unknown";
         final Player p = Bukkit.getPlayer(uuid);
-        return p != null ? p.getName() : uuid.toString();
+        if (p != null) return p.getName();
+        // Player went offline — try OfflinePlayer for cached name
+        final org.bukkit.OfflinePlayer op = Bukkit.getOfflinePlayer(uuid);
+        final String name = op.getName();
+        return name != null ? name : "Unknown Player";
     }
 
     private static boolean isInteger(final String s) {

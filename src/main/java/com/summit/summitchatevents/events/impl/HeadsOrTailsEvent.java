@@ -1,6 +1,7 @@
 package com.summit.summitchatevents.events.impl;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
+import com.summit.summitchatevents.config.PluginConfig;
 import com.summit.summitchatevents.config.HeadsOrTailsConfig;
 import com.summit.summitchatevents.events.ChatEvent;
 import org.bukkit.Bukkit;
@@ -163,9 +164,9 @@ public final class HeadsOrTailsEvent extends ChatEvent implements Listener {
 
     private void scheduleIntro(final HeadsOrTailsConfig cfg) {
         schedule(0L, () -> {
-            Bukkit.broadcastMessage(cfg.getMsgBannerTop());
-            Bukkit.broadcastMessage(cfg.getMsgAnnounce());
-            Bukkit.broadcastMessage(cfg.getMsgBannerBottom());
+            Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgBannerTop()));
+            Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgAnnounce()));
+            Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgBannerBottom()));
         });
         schedule(T_RULES,      () -> Bukkit.broadcastMessage(cfg.getMsgRules()));
         schedule(T_HERE_WE_GO, () -> Bukkit.broadcastMessage(cfg.getMsgHereWeGo()));
@@ -191,7 +192,7 @@ public final class HeadsOrTailsEvent extends ChatEvent implements Listener {
         live = true;
 
         final HeadsOrTailsConfig cfg = getPlugin().getPluginConfig().getHeadsOrTailsConfig();
-        Bukkit.broadcastMessage(cfg.getMsgChoose());
+        Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgChoose()));
 
         getPlugin().getLogger().info("[HeadsOrTailsEvent] Round " + currentRound + " started.");
 
@@ -299,10 +300,10 @@ public final class HeadsOrTailsEvent extends ChatEvent implements Listener {
 
     private void announceWinner(final HeadsOrTailsConfig cfg, final String winnerName) {
         final String prize = cfg.getRewardDisplayName();
-        Bukkit.broadcastMessage(cfg.getMsgWinnerBannerTop());
-        Bukkit.broadcastMessage(cfg.getMsgWinnerLine().replace("%player%", winnerName));
-        Bukkit.broadcastMessage(cfg.getMsgWinnerPrizeLine().replace("%prize%", prize));
-        Bukkit.broadcastMessage(cfg.getMsgWinnerBannerBottom());
+        Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgWinnerBannerTop()));
+        Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgWinnerLine().replace("%player%", winnerName)));
+        Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgWinnerPrizeLine().replace("%prize%", prize)));
+        Bukkit.broadcastMessage(PluginConfig.broadcast(cfg.getMsgWinnerBannerBottom()));
     }
 
     private void runRewardCommand(final HeadsOrTailsConfig cfg, final String winnerName) {

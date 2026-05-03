@@ -58,6 +58,8 @@ public final class WavelengthConfig {
     private final String msgAnnounce;
     private final String msgRules;
     private final String msgHereWeGo;
+    private final String msgAreYouReady;
+    private final String msgPrizeLine;
     private final String msgScale;
     private final String msgPrompt;
     private final String msgRoundResultSingle;
@@ -144,6 +146,10 @@ public final class WavelengthConfig {
                 "&7Place the prompt on the scale. &fType &e0&f-&e100&f.");
         msgHereWeGo          = msg(yaml, rawPrefix, mb + ".here-we-go",
                 "&a&lHere we go!");
+        msgAreYouReady       = msg(yaml, rawPrefix, mb + ".are-you-ready",
+                "<center>&#AAAAAA Are you ready?");
+        msgPrizeLine         = msg(yaml, rawPrefix, mb + ".prize-line",
+                "<center>&#AAAAAA Prize: %prize%");
         msgScale             = msg(yaml, rawPrefix, mb + ".scale",
                 "%prefix%&7Scale: &e%scale_min% &7\u2194 &e%scale_max%");
         msgPrompt            = msg(yaml, rawPrefix, mb + ".prompt",
@@ -219,6 +225,8 @@ public final class WavelengthConfig {
     public String getMsgAnnounce()         { return msgAnnounce; }
     public String getMsgRules()            { return msgRules; }
     public String getMsgHereWeGo()         { return msgHereWeGo; }
+    public String getMsgAreYouReady()      { return msgAreYouReady; }
+    public String getMsgPrizeLine()        { return msgPrizeLine; }
     public String getMsgScale()            { return msgScale; }
     public String getMsgPrompt()           { return msgPrompt; }
     public String getMsgRoundResultSingle(){ return msgRoundResultSingle; }
