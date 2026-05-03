@@ -50,6 +50,10 @@ public final class HeadsOrTailsConfig {
                 "&7Each round type &aheads &7or &ctails &7in chat. Wrong guess? You're out!");
         msgHereWeGo     = msg(cfg, rawPrefix, "messages.here-we-go",
                 "&a&lHere we go!");
+        msgAreYouReady  = msg(cfg, rawPrefix, "messages.are-you-ready",
+                "<center>&#AAAAAA Are you ready?");
+        msgPrizeLine    = msg(cfg, rawPrefix, "messages.prize-line",
+                "<center>&#AAAAAA Prize: %prize%");
         msgChoose       = msg(cfg, rawPrefix, "messages.choose",
                 "%prefix%&eType &aheads &eor &ctails &enow!");
         msgResult       = msg(cfg, rawPrefix, "messages.result",
