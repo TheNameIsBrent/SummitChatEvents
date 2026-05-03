@@ -48,6 +48,10 @@ public final class CountUpConfig {
                 "<center>&#AAAAAA▸ Type the next number. &#FF6B6BNo two in a row!");
         msgHereWeGo           = msg(cfg, rawPrefix, "messages.here-we-go",
                 "<center><gradient:#00FF87:#00CFFF>&l» Here we go! «</gradient>");
+        msgAreYouReady        = msg(cfg, rawPrefix, "messages.are-you-ready",
+                "<center>&#AAAAAA Are you ready?");
+        msgPrizeLine          = msg(cfg, rawPrefix, "messages.prize-line",
+                "<center>&#AAAAAA Prize: %prize%");
         msgNoWinner           = msg(cfg, rawPrefix, "messages.no-winner",
                 "%prefix%&cThe event ended \u2014 nobody scored!");
         msgWinnerBannerTop    = msg(cfg, rawPrefix, "messages.winner-banner-top",

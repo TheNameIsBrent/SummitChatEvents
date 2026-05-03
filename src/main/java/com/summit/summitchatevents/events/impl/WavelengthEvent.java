@@ -1,6 +1,7 @@
 package com.summit.summitchatevents.events.impl;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
+import com.summit.summitchatevents.config.PluginConfig;
 import com.summit.summitchatevents.config.WavelengthConfig;
 import com.summit.summitchatevents.events.ChatEvent;
 import com.summit.summitchatevents.listeners.ChatListener;
