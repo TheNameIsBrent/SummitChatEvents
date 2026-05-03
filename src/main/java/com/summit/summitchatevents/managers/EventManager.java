@@ -3,6 +3,7 @@ package com.summit.summitchatevents.managers;
 import com.summit.summitchatevents.SummitChatEventsPlugin;
 import com.summit.summitchatevents.events.ChatEvent;
 import com.summit.summitchatevents.events.impl.CountUpEvent;
+import com.summit.summitchatevents.events.impl.HeadsOrTailsEvent;
 import com.summit.summitchatevents.events.impl.WavelengthEvent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -62,8 +63,9 @@ public final class EventManager {
     // -----------------------------------------------------------------------
 
     private void registerBuiltInEvents() {
-        register("count",      new CountUpEvent(plugin));
-        register("wavelength", new WavelengthEvent(plugin));
+        register("count",        new CountUpEvent(plugin));
+        register("wavelength",   new WavelengthEvent(plugin));
+        register("headsortails", new HeadsOrTailsEvent(plugin));
     }
 
     public void register(final @NotNull String key, final @NotNull ChatEvent event) {

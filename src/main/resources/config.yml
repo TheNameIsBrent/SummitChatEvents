@@ -1,108 +1,20 @@
 # ══════════════════════════════════════════════════════
-#  SummitChatEvents — Configuration
+#  SummitChatEvents — Global Configuration
 #
-#  Color codes : & followed by a code (&a, &c, &e, &l …)
-#  Placeholders available in ALL messages:
-#    %prefix%     — the prefix value defined below
-#  Additional per-event placeholders documented inline.
+#  Event-specific settings live in their own files:
+#    plugins/SummitChatEvents/events/count.yml
+#    plugins/SummitChatEvents/events/wavelength.yml
+#    plugins/SummitChatEvents/events/headsortails.yml
+#
+#  Delete any of those files to reset them to defaults.
+#  This file only contains settings shared by all events.
 # ══════════════════════════════════════════════════════
 
 # Prefix injected wherever %prefix% appears in any message.
 prefix: "&6[&eSummitEvents&6]&r "
 
+# Verbose console logging.
 debug: false
 
 # Broadcast when an admin forcibly stops an event with /summitevent stop.
 stopped-message: "%prefix%&cThe event has been stopped by an administrator."
-
-events:
-
-  # ── Count Up ─────────────────────────────────────────────────────────────
-  count:
-    min-players: 2
-    min-duration: 30
-    max-duration: 90
-    reward-command: "give %player% diamond 3"
-
-    messages:
-      # Big announcement — shown centered with decorative border
-      banner-top:    "&6&m        &r &e&l   COUNT UP EVENT   &r &6&m        "
-      banner-bottom: "&6&m══════════════════════════════"
-      announce:      "&e&lA counting event is starting!"
-      rules:         "&7Type the next number in chat. &fYou can't go twice in a row!"
-      here-we-go:    "&a&lHere we go!"
-      no-winner:     "%prefix%&cThe event ended &7— &cnobody scored!"
-      winner:        "%prefix%&aEvent over! &eWinner: &6&l%player% &awith &e%number%&a. Well played!"
-      reward:        "%prefix%&6%player% &ehas been rewarded!"
-
-  # ── Wavelength ───────────────────────────────────────────────────────────
-  # Placeholders: %round%, %player%, %players%, %guess%, %average%,
-  #               %scale_min%, %scale_max%, %prompt%, %seconds%
-  wavelength:
-    min-players: 3
-    reward-command: "give %player% emerald 3"
-
-    rounds:
-      round1-duration: 15
-      round2-duration: 10
-      round3-duration: 5
-
-    scales:
-      - scale-min: "Worst mob"
-        scale-max: "Best mob"
-        prompts:
-          - "Creeper"
-          - "Zombie"
-          - "Skeleton"
-          - "Enderman"
-          - "Blaze"
-
-      - scale-min: "Useless item"
-        scale-max: "Most useful item"
-        prompts:
-          - "Stick"
-          - "Feather"
-          - "Diamond Pickaxe"
-          - "Crafting Table"
-          - "Bucket"
-
-      - scale-min: "Easy biome"
-        scale-max: "Hardest biome to survive in"
-        prompts:
-          - "Plains"
-          - "Desert"
-          - "Nether Wastes"
-          - "Deep Dark"
-          - "Mushroom Island"
-
-    messages:
-      # Big announcement
-      banner-top:      "&d&m        &r &d&l   WAVELENGTH EVENT   &r &d&m        "
-      banner-bottom:   "&d&m══════════════════════════════"
-      announce:        "&d&lA Wavelength event is starting!"
-      rules:           "&7Place the prompt on the scale. &fType a number &e0&f-&e100&f."
-      here-we-go:      "&a&lHere we go!"
-
-      scale:           "%prefix%&7Scale: &e%scale_min% &7\u2194 &e%scale_max%"
-      prompt:          "%prefix%&fPrompt: &d&l%prompt%"
-
-      round-2-start:   "%prefix%&6&lTie! &eRound 2 — only these players continue: &6%players%"
-      final-round:     "%prefix%&c&lFinal Round! &eLast chance — remaining: &6%players%"
-
-      # Single winner: uses %average%, %player%, %guess%
-      round-result-single: "%prefix%&e&lWinner: &6&l%player% &7(average &6%average%&7)"
-      # Tie (2+ tied): uses %average%, %players%  where %players% = "Alice (75), Bob (75)"
-      round-result-tie:    "%prefix%&6&lIt's a tie! &e%players% &7(average &6%average%&7)"
-
-      guessing-over:   "&6&l\u2728 Ohhh, lots of guesses! Here comes the result..."
-
-      tie-eliminated:  "%prefix%&cYou have been eliminated!"
-      tie-advanced:    "%prefix%&aYou advanced to the next round!"
-      multiple-winners:"%prefix%&6&lIt's a tie! &eAll tied players win: &6%players%"
-      no-winner:       "%prefix%&cThe event ended &7— &cnobody scored!"
-      winner:          "%prefix%&aEvent over! &eWinner: &6&l%player%&a!"
-      reward:          "%prefix%&6%player% &ehas been rewarded!"
-      reward-multiple: "%prefix%&6%players% &ehave all been rewarded!"
-      guess-ack:       "%prefix%&7Your guess &e%guess%&7 has been recorded!"
-
-      countdown:       "%prefix%&e%seconds%s remaining!"

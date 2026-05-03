@@ -154,12 +154,10 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
         } else if (winners == null || winners.isEmpty()) {
             broadcast(wcfg.getMsgNoWinner());
         } else if (winners.size() == 1) {
-            // Round-result-single already broadcast the winner announcement.
-            // Just run reward here.
+            announceWinners(wcfg, winners);
             runRewardCommands(wcfg, winners);
         } else {
-            // Round-result-tie already broadcast the tie announcement during endRound.
-            // Just run rewards here.
+            announceWinners(wcfg, winners);
             runRewardCommands(wcfg, winners);
         }
 
@@ -509,20 +507,31 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
     // Helpers — main thread
     // -----------------------------------------------------------------------
 
+    private void announceWinners(final WavelengthConfig wcfg, final List<UUID> winners) {
+        final String prize = wcfg.getRewardDisplayName();
+        broadcast(wcfg.getMsgWinnerBannerTop());
+        if (winners.size() == 1) {
+            broadcast(wcfg.getMsgWinnerLine().replace("%player%", resolvePlayerName(winners.get(0))));
+        } else {
+            broadcast(wcfg.getMsgWinnerMultiLine().replace("%players%", buildNameList(winners)));
+        }
+        broadcast(wcfg.getMsgWinnerPrizeLine().replace("%prize%", prize));
+        broadcast(wcfg.getMsgWinnerBannerBottom());
+    }
+
     private void runRewardCommands(final WavelengthConfig wcfg, final List<UUID> winners) {
-        final String cmd = wcfg.getRewardCommand();
-        if (cmd != null && !cmd.isBlank()) {
-            for (final UUID uuid : winners) {
-                final String name = resolvePlayerName(uuid);
+        final String cmd   = wcfg.getRewardCommand();
+        final String prize = wcfg.getRewardDisplayName();
+        for (final UUID uuid : winners) {
+            final String name = resolvePlayerName(uuid);
+            if (cmd != null && !cmd.isBlank()) {
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd.replace("%player%", name));
                 getPlugin().getLogger().info("[WavelengthEvent] Reward dispatched for " + name);
             }
-        }
-        if (winners.size() == 1) {
-            broadcast(WavelengthConfig.format(wcfg.getMsgReward(),
-                    -1, resolvePlayerName(winners.get(0)), -1, -1, null, null, null));
-        } else {
-            broadcast(wcfg.getMsgRewardMultiple().replace("%players%", buildNameList(winners)));
+            final Player p = Bukkit.getPlayer(uuid);
+            if (p != null) {
+                p.sendMessage(wcfg.getMsgRewardPrivate().replace("%prize%", prize));
+            }
         }
     }
 

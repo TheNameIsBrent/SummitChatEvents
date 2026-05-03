@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════
+#  Count Up Event — Settings
+#  Delete this file to reset all settings to defaults.
+#
+#  Syntax:
+#    &#RRGGBB or <#RRGGBB>                      — hex colour
+#    <gradient:#RRGGBB:#RRGGBB>text</gradient>  — gradient
+#    <center>rest of line                       — centre line in chat
+#  Placeholders: %prefix%  %player%  %number%  %prize%
+# ══════════════════════════════════════════════════════
+
+min-players: 2
+min-duration: 30
+max-duration: 90
+
+reward:
+  command:      "give %player% diamond 3"
+  display-name: "&#b9f2ff3x Diamond"
+
+messages:
+  banner-top:    "<center><gradient:#FFD700:#FF8C00>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  announce:      "<center><gradient:#FFD700:#FF8C00>&l✦ COUNT UP EVENT ✦</gradient>"
+  banner-bottom: "<center><gradient:#FF8C00:#FFD700>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  rules:         "<center>&#AAAAAA▸ Type the next number in chat. &#FF6B6BNo two in a row!"
+  here-we-go:    "<center><gradient:#00FF87:#00CFFF>&l» Here we go! «</gradient>"
+  no-winner:     "%prefix%&cThe event ended &7— &cnobody scored!"
+
+  # Public winner announcement — use %player%, %number%, %prize%
+  winner-banner-top:    "<center><gradient:#FFD700:#FF8C00>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  winner-line:          "<center><gradient:#FFD700:#FFA500>&l🏆 %player% WINS! 🏆</gradient>"
+  winner-prize-line:    "<center>&#AAAAAA Prize: %prize%"
+  winner-banner-bottom: "<center><gradient:#FF8C00:#FFD700>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+
+  # Private message sent only to the winner
+  reward-private: "%prefix%<gradient:#FFD700:#FF8C00>&lCongratulations!</gradient> &eYou won %prize%&e!"

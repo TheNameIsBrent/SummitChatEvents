@@ -1,6 +1,7 @@
 package com.summit.summitchatevents.events.impl;
 
 import com.summit.summitchatevents.SummitChatEventsPlugin;
+import com.summit.summitchatevents.config.CountUpConfig;
 import com.summit.summitchatevents.config.PluginConfig;
 import com.summit.summitchatevents.events.ChatEvent;
 import com.summit.summitchatevents.listeners.ChatListener;
@@ -112,7 +113,7 @@ public final class CountUpEvent extends ChatEvent implements Listener {
 
     @Override
     public int getMinPlayers() {
-        return getPlugin().getPluginConfig().getCountMinPlayers();
+        return getPlugin().getPluginConfig().getCountUpConfig().getMinPlayers();
     }
 
     @Override
@@ -146,10 +147,10 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         if (stoppedByAdmin) {
             // Force-stopped — stop command already broadcast the message, no result shown
         } else if (winner != null) {
-            broadcast(PluginConfig.format(cfg.getCountMsgWinner(), winner, count));
+            announceWinner(cfg, winner);
             runRewardCommand(cfg, winner);
         } else {
-            broadcast(cfg.getCountMsgNoWinner());
+            broadcast(cfg.getMsgNoWinner());
         }
 
         getPlugin().getLogger().info(String.format(
@@ -166,16 +167,16 @@ public final class CountUpEvent extends ChatEvent implements Listener {
     // -----------------------------------------------------------------------
 
     private void scheduleIntro() {
-        final PluginConfig cfg = getPlugin().getPluginConfig();
+        final CountUpConfig cfg = getPlugin().getPluginConfig().getCountUpConfig();
 
         // Big centred banner
         schedule(0L, () -> {
-            broadcast(cfg.getCountMsgBannerTop());
-            broadcast(cfg.getCountMsgAnnounce());
-            broadcast(cfg.getCountMsgBannerBottom());
+            broadcast(cfg.getMsgBannerTop());
+            broadcast(cfg.getMsgAnnounce());
+            broadcast(cfg.getMsgBannerBottom());
         });
-        schedule(T_RULES,      () -> broadcast(cfg.getCountMsgRules()));
-        schedule(T_HERE_WE_GO, () -> broadcast(cfg.getCountMsgHereWeGo()));
+        schedule(T_RULES,      () -> broadcast(cfg.getMsgRules()));
+        schedule(T_HERE_WE_GO, () -> broadcast(cfg.getMsgHereWeGo()));
         schedule(T_GO_LIVE,    this::goLive);
     }
 
@@ -186,8 +187,8 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         broadcastStyledNumber(1);  // null sender = server
 
         final PluginConfig cfg    = getPlugin().getPluginConfig();
-        final int          minSec = cfg.getCountMinDuration();
-        final int          maxSec = cfg.getCountMaxDuration();
+        final int          minSec = cfg.getMinDuration();
+        final int          maxSec = cfg.getMaxDuration();
         final int          durSec = minSec + random.nextInt(Math.max(maxSec - minSec + 1, 1));
 
         schedule((long) durSec * 20L, () -> {
@@ -305,13 +306,26 @@ public final class CountUpEvent extends ChatEvent implements Listener {
         }
     }
 
-    private void runRewardCommand(final PluginConfig cfg, final String winnerName) {
-        final String cmd = cfg.getCountRewardCommand();
+    /** Broadcasts the epic multi-line winner announcement. */
+    private void announceWinner(final CountUpConfig cfg, final String winner) {
+        final String prize = cfg.getRewardDisplayName();
+        broadcast(cfg.getMsgWinnerBannerTop());
+        broadcast(cfg.getMsgWinnerLine().replace("%player%", winner));
+        broadcast(cfg.getMsgWinnerPrizeLine().replace("%prize%", prize));
+        broadcast(cfg.getMsgWinnerBannerBottom());
+    }
+
+    private void runRewardCommand(final CountUpConfig cfg, final String winnerName) {
+        final String cmd = cfg.getRewardCommand();
         if (cmd == null || cmd.isBlank()) return;
         final String resolved = cmd.replace("%player%", winnerName);
         Bukkit.getScheduler().runTask(getPlugin(), () -> {
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), resolved);
-            broadcast(cfg.getCountMsgReward().replace("%player%", winnerName));
+            final Player wp = Bukkit.getPlayerExact(winnerName);
+            if (wp != null) {
+                wp.sendMessage(cfg.getMsgRewardPrivate()
+                        .replace("%prize%", cfg.getRewardDisplayName()));
+            }
             getPlugin().getLogger().info(
                     "[CountUpEvent] Reward dispatched for " + winnerName + ": " + resolved);
         });

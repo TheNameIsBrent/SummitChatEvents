@@ -48,6 +48,7 @@ public final class WavelengthConfig {
 
     private final int    minPlayers;
     private final String rewardCommand;
+    private final String rewardDisplayName;
     private final List<Long> roundDurationTicks;
     private final List<Scale> scales;
 
@@ -70,8 +71,12 @@ public final class WavelengthConfig {
     private final String msgWinner;
     private final String msgMultipleWinners;
     private final String msgNoWinner;
-    private final String msgReward;
-    private final String msgRewardMultiple;
+    private final String msgWinnerBannerTop;
+    private final String msgWinnerLine;
+    private final String msgWinnerPrizeLine;
+    private final String msgWinnerBannerBottom;
+    private final String msgWinnerMultiLine;
+    private final String msgRewardPrivate;
     private final String msgGuessAck;
     private final String msgStopped;
 
@@ -80,16 +85,14 @@ public final class WavelengthConfig {
     // -----------------------------------------------------------------------
 
     public WavelengthConfig(final FileConfiguration yaml, final String rawPrefix, final Logger log) {
-        final String base = "events.wavelength";
         final ConfigurationSection root = yaml.getConfigurationSection(base);
 
-        minPlayers    = yaml.getInt(base + ".min-players", 3);
+        minPlayers    = yaml.getInt("min-players", 3);
         rewardCommand = yaml.getString(base + ".reward-command", "");
 
         // ── Round durations ────────────────────────────────────────────────
         final List<Long> durations = new ArrayList<>();
-        final ConfigurationSection roundSec =
-                root != null ? root.getConfigurationSection("rounds") : null;
+        final ConfigurationSection roundSec = yaml.getConfigurationSection("rounds");
         if (roundSec != null) {
             final List<String> keys = new ArrayList<>(roundSec.getKeys(false));
             Collections.sort(keys);
@@ -105,7 +108,7 @@ public final class WavelengthConfig {
 
         // ── Scales ─────────────────────────────────────────────────────────
         final List<Scale> loadedScales = new ArrayList<>();
-        final List<?> scaleList = yaml.getList(base + ".scales");
+        final List<?> scaleList = yaml.getList("scales");
         if (scaleList != null) {
             for (final Object obj : scaleList) {
                 if (!(obj instanceof Map)) continue;
@@ -131,7 +134,7 @@ public final class WavelengthConfig {
         scales = Collections.unmodifiableList(loadedScales);
 
         // ── Messages ───────────────────────────────────────────────────────
-        final String mb = base + ".messages";
+        final String mb = "messages";
         msgBannerTop         = msg(yaml, rawPrefix, mb + ".banner-top",
                 "&d&m        &r &d&l   WAVELENGTH EVENT   &r &d&m        ");
         msgBannerBottom      = msg(yaml, rawPrefix, mb + ".banner-bottom",
@@ -168,6 +171,18 @@ public final class WavelengthConfig {
                 "%prefix%&6&lTie! &eAll tied players win: &6%players%");
         msgNoWinner          = msg(yaml, rawPrefix, mb + ".no-winner",
                 "%prefix%&cThe event ended \u2014 nobody scored!");
+        msgWinnerBannerTop    = msg(yaml, rawPrefix, mb + ".winner-banner-top",
+                "<center><gradient:#B400FF:#FF00FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>");
+        msgWinnerLine         = msg(yaml, rawPrefix, mb + ".winner-line",
+                "<center><gradient:#B400FF:#FF00FF>&l\uD83C\uDFC6 %player% WINS! \uD83C\uDFC6</gradient>");
+        msgWinnerPrizeLine    = msg(yaml, rawPrefix, mb + ".winner-prize-line",
+                "<center>&#AAAAAA Prize: %prize%");
+        msgWinnerBannerBottom = msg(yaml, rawPrefix, mb + ".winner-banner-bottom",
+                "<center><gradient:#FF00FF:#B400FF>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>");
+        msgWinnerMultiLine    = msg(yaml, rawPrefix, mb + ".winner-multi-line",
+                "<center><gradient:#B400FF:#FF00FF>&l\uD83C\uDFC6 %players% WIN! \uD83C\uDFC6</gradient>");
+        msgRewardPrivate      = msg(yaml, rawPrefix, mb + ".reward-private",
+                "%prefix%<gradient:#B400FF:#FF00FF>&lCongratulations!</gradient> &eYou won %prize%&e!");
         msgReward            = msg(yaml, rawPrefix, mb + ".reward",
                 "%prefix%&6%player% &ehas been rewarded!");
         msgRewardMultiple    = msg(yaml, rawPrefix, mb + ".reward-multiple",
@@ -203,6 +218,7 @@ public final class WavelengthConfig {
 
     public int    getMinPlayers()          { return minPlayers; }
     public String getRewardCommand()       { return rewardCommand; }
+    public String getRewardDisplayName()   { return rewardDisplayName; }
     public String getMsgBannerTop()        { return msgBannerTop; }
     public String getMsgBannerBottom()     { return msgBannerBottom; }
     public String getMsgAnnounce()         { return msgAnnounce; }

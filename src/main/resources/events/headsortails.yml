@@ -1,0 +1,35 @@
+# ══════════════════════════════════════════════════════
+#  Heads or Tails Event — Settings
+#  Delete this file to reset all settings to defaults.
+#
+#  Placeholders: %prefix%  %player%  %players%  %choice%
+#                %result%  %survivors%  %prize%
+# ══════════════════════════════════════════════════════
+
+min-players: 2
+max-rounds: 10
+
+reward:
+  command:      "give %player% gold_ingot 5"
+  display-name: "&#FFD7005x Gold Ingot"
+
+messages:
+  banner-top:    "<center><gradient:#FFD700:#FF8C00>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  announce:      "<center><gradient:#FFD700:#FFC200>&l🪙 HEADS OR TAILS 🪙</gradient>"
+  banner-bottom: "<center><gradient:#FF8C00:#FFD700>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  rules:         "<center>&#AAAAAA▸ Each round type &#00FF87heads &#AAAAAAAAor &#FF6B6Btails&#AAAAAA. Wrong guess? You're out!"
+  here-we-go:    "<center><gradient:#00FF87:#00CFFF>&l» Here we go! «</gradient>"
+  choose:        "<center><gradient:#00FF87:#FFD700>&lChoose now:</gradient> &aheads &7or &ctails"
+  result:        "%prefix%<gradient:#FFD700:#FF8C00>&lIt's %result%!</gradient> &e%survivors% player(s) survive."
+  eliminated:    "%prefix%&#FF4444You picked &l%choice%&#FF4444 — eliminated!"
+  survived:      "%prefix%&#00FF87You picked &l%choice%&#00FF87 — you survive!"
+  no-winner:     "%prefix%&cThe event ended &7— &cnobody won!"
+
+  # Public winner announcement
+  winner-banner-top:    "<center><gradient:#FFD700:#FF8C00>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+  winner-line:          "<center><gradient:#FFD700:#FFC200>&l🏆 %player% WINS! 🏆</gradient>"
+  winner-prize-line:    "<center>&#AAAAAA Prize: %prize%"
+  winner-banner-bottom: "<center><gradient:#FF8C00:#FFD700>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</gradient>"
+
+  # Private message sent only to the winner
+  reward-private: "%prefix%<gradient:#FFD700:#FF8C00>&lCongratulations!</gradient> &eYou won %prize%&e!"
