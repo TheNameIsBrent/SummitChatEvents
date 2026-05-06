@@ -47,6 +47,8 @@ public final class WavelengthConfig {
     // -----------------------------------------------------------------------
 
     private final int    minPlayers;
+    private final boolean ggwaveEnabled;
+    private final String  ggwaveCommand;
     private final String rewardCommand;
     private final String rewardDisplayName;
     private final List<Long> roundDurationTicks;
@@ -89,6 +91,8 @@ public final class WavelengthConfig {
 
     public WavelengthConfig(final FileConfiguration yaml, final String rawPrefix, final Logger log) {
         minPlayers       = yaml.getInt("min-players", 3);
+        ggwaveEnabled    = yaml.getBoolean("ggwave.enabled", false);
+        ggwaveCommand    = yaml.getString("ggwave.command", "");
         rewardCommand    = yaml.getString("reward.command", "");
         rewardDisplayName = msg(yaml, rawPrefix, "reward.display-name", "&#FFD700a prize");
 
@@ -221,6 +225,8 @@ public final class WavelengthConfig {
     // -----------------------------------------------------------------------
 
     public int    getMinPlayers()          { return minPlayers; }
+    public boolean isGgwaveEnabled()       { return ggwaveEnabled; }
+    public String  getGgwaveCommand()      { return ggwaveCommand; }
     public String getRewardCommand()       { return rewardCommand; }
     public String getRewardDisplayName()   { return rewardDisplayName; }
     public String getMsgBannerTop()        { return msgBannerTop; }

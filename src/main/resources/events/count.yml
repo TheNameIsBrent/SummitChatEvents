@@ -7,6 +7,10 @@ min-players: 2
 min-duration: 30
 max-duration: 90
 
+ggwave:
+  enabled: false
+  command: "ggwave"
+
 reward:
   command:      "give %player% diamond 3"
   display-name: "&#b9f2ff3x Diamond"

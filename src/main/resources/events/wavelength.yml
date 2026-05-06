@@ -6,6 +6,10 @@
 
 min-players: 3
 
+ggwave:
+  enabled: false
+  command: "ggwave"
+
 reward:
   command:      "give %player% emerald 3"
   display-name: "&#a9ffa9 3x Emerald"

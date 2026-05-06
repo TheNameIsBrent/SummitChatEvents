@@ -8,8 +8,10 @@ import org.bukkit.configuration.file.FileConfiguration;
  */
 public final class CountUpConfig {
 
-    private final int    minPlayers;
-    private final int    minDuration;
+    private final int     minPlayers;
+    private final boolean ggwaveEnabled;
+    private final String  ggwaveCommand;
+    private final int     minDuration;
     private final int    maxDuration;
     private final String rewardCommand;
     private final String rewardDisplayName;
@@ -33,6 +35,8 @@ public final class CountUpConfig {
 
     public CountUpConfig(final FileConfiguration cfg, final String rawPrefix) {
         minPlayers         = cfg.getInt("min-players", 2);
+        ggwaveEnabled      = cfg.getBoolean("ggwave.enabled", false);
+        ggwaveCommand      = cfg.getString("ggwave.command", "");
         minDuration        = cfg.getInt("min-duration", 30);
         maxDuration        = cfg.getInt("max-duration", 90);
         rewardCommand      = cfg.getString("reward.command", "");
@@ -71,6 +75,8 @@ public final class CountUpConfig {
     // -----------------------------------------------------------------------
 
     public int    getMinPlayers()          { return minPlayers; }
+    public boolean isGgwaveEnabled()       { return ggwaveEnabled; }
+    public String  getGgwaveCommand()      { return ggwaveCommand; }
     public int    getMinDuration()         { return minDuration; }
     public int    getMaxDuration()         { return maxDuration; }
     public String getRewardCommand()       { return rewardCommand; }

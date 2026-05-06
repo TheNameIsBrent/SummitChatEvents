@@ -157,6 +157,15 @@ public final class CountUpEvent extends ChatEvent implements Listener {
                 "[CountUpEvent] Stopped. Highest: %d. Winner: %s",
                 count, winner != null ? winner : "none"));
 
+        // ggwave command — run once at end
+        if (!stoppedByAdmin && cfg.isGgwaveEnabled()) {
+            final String ggCmd = cfg.getGgwaveCommand();
+            if (ggCmd != null && !ggCmd.isBlank()) {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), ggCmd);
+                getPlugin().getLogger().info("[CountUpEvent] ggwave command executed: " + ggCmd);
+            }
+        }
+
         currentNumber.set(0);
         lastPlayerUuid.set(null);
         lastPlayerName.set(null);

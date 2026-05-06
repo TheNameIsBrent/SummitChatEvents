@@ -167,6 +167,15 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 + ". Winners: " + (winners != null && !winners.isEmpty()
                     ? buildNameList(winners) : "none"));
 
+        // ggwave command — run once at end, regardless of winner count
+        if (!stoppedByAdmin && wcfg.isGgwaveEnabled()) {
+            final String ggCmd = wcfg.getGgwaveCommand();
+            if (ggCmd != null && !ggCmd.isBlank()) {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), ggCmd);
+                getPlugin().getLogger().info("[WavelengthEvent] ggwave command executed: " + ggCmd);
+            }
+        }
+
         // 5. Reset state completely
         synchronized (this) {
             activePlayers.clear();
@@ -383,9 +392,9 @@ public final class WavelengthEvent extends ChatEvent implements Listener {
                 for (final UUID uuid : allActive) {
                     final Player p = Bukkit.getPlayer(uuid);
                     if (p == null) continue;
-                    p.sendMessage(tiedSet.contains(uuid)
+                    p.sendMessage(PluginConfig.broadcast(tiedSet.contains(uuid)
                             ? wcfg.getMsgTieAdvanced()
-                            : wcfg.getMsgTieEliminated());
+                            : wcfg.getMsgTieEliminated()));
                 }
                 synchronized (this) {
                     activePlayers.clear();
